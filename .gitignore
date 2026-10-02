@@ -33,3 +33,5 @@ logs/
 
 # Kubernetes secrets locais (nunca commitar)
 *-secrets.yaml
+
+*.github/
