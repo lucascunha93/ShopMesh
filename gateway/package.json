@@ -1,0 +1,20 @@
+{
+  "name": "@shopmesh/api-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API Gateway do ShopMesh",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
