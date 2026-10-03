@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: #173d35;
+  background: #f7f8f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #d96c4f;
+  outline-offset: 3px;
+}
+
+::selection {
+  color: #173d35;
+  background: #dce89a;
+}
+
+.catalog-pattern {
+  background-image:
+    linear-gradient(135deg, transparent 48%, rgba(69, 107, 90, 0.13) 49%, rgba(69, 107, 90, 0.13) 50%, transparent 51%),
+    linear-gradient(45deg, transparent 48%, rgba(69, 107, 90, 0.1) 49%, rgba(69, 107, 90, 0.1) 50%, transparent 51%);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to left, black, transparent);
+}
+
+.product-card {
+  animation: card-arrive 480ms both;
+}
+
+.product-orbit {
+  animation: orbit-breathe 7s ease-in-out infinite alternate;
+}
+
+.product-orbit-delayed {
+  animation-delay: -3.5s;
+}
+
+.product-detail-visual {
+  background-image:
+    linear-gradient(135deg, transparent 48%, rgba(23, 61, 53, 0.09) 49%, rgba(23, 61, 53, 0.09) 50%, transparent 51%),
+    linear-gradient(45deg, transparent 48%, rgba(23, 61, 53, 0.07) 49%, rgba(23, 61, 53, 0.07) 50%, transparent 51%);
+  background-size: 48px 48px;
+}
+
+.login-graphic {
+  background-image:
+    linear-gradient(30deg, transparent 49.7%, rgba(200, 216, 91, 0.16) 50%, transparent 50.3%),
+    linear-gradient(150deg, transparent 49.7%, rgba(200, 216, 91, 0.12) 50%, transparent 50.3%);
+  background-size: 100% 100%, 100% 100%;
+}
+
+.login-graphic::after {
+  position: absolute;
+  right: -80px;
+  top: 14%;
+  width: 260px;
+  height: 360px;
+  border: 1px solid rgba(200, 216, 91, 0.3);
+  content: '';
+  transform: rotate(34deg);
+}
+
+@keyframes card-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes orbit-breathe {
+  from {
+    transform: scale(0.96) rotate(-8deg);
+  }
+  to {
+    transform: scale(1.04) rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

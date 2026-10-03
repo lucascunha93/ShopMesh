@@ -1,9 +1,11 @@
 const express = require('express');
+const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const config = require('./config');
 
 const app = express();
 app.disable('x-powered-by');
+app.use(cors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173'] }));
 
 function createServiceProxy(target, serviceName) {
   return createProxyMiddleware({
