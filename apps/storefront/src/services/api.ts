@@ -17,4 +17,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (!axios.isCancel(error)) {
+      if (axios.isAxiosError(error)) {
+        console.error('[api] Request failed', {
+          method: error.config?.method,
+          url: error.config?.url?.split('?')[0],
+          status: error.response?.status,
+          code: error.code,
+          message: error.message,
+        });
+      } else {
+        console.error('[api] Request failed', {
+          errorName: error instanceof Error ? error.name : typeof error,
+        });
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
+
 export default api;

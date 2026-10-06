@@ -2,10 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const config = require('./config');
+const { logHttpFailures, logProxyError, logRequestError } = require('./utils/logger');
 
 const app = express();
 app.disable('x-powered-by');
 app.use(cors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173'] }));
+app.use((req, res, next) => {
+  logHttpFailures(req, res, Date.now());
+  next();
+});
 
 function createServiceProxy(target, serviceName) {
   return createProxyMiddleware({
@@ -13,6 +18,7 @@ function createServiceProxy(target, serviceName) {
     changeOrigin: true,
     on: {
       error(error, req, res) {
+        logProxyError(error, req, serviceName);
         if (!res.headersSent) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ message: `Serviço ${serviceName} indisponível` }));
@@ -42,6 +48,7 @@ app.use((error, req, res, next) => {
     return res.status(400).json({ message: 'JSON inválido' });
   }
 
+  logRequestError(error, req, 500);
   return res.status(500).json({ message: 'Erro interno do gateway' });
 });
 

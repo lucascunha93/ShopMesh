@@ -24,16 +24,26 @@ Por padrão, o gateway escuta em `http://localhost:3000` e encaminha para `http:
 
 ### Auth Service
 
+O storefront não tem uma tela de cadastro. Crie a conta pelo endpoint abaixo e depois entre em `/login` usando o mesmo email e senha:
+
 ```bash
 curl -X POST http://localhost:3000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Ana Silva","email":"ana@example.com","password":"senha-segura"}'
 ```
 
+Para testar o login pela API:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ana@example.com","password":"senha-segura"}'
+```
+
 ### Catalog Service
 
 ```bash
-curl http://localhost:3000/api/catalog/products?page=1&limit=20
+curl "http://localhost:3000/api/catalog/products?page=1&limit=12"
 ```
 
 ```bash

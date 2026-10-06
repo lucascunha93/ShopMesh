@@ -4,6 +4,7 @@ const app = require('./app');
 const mongoose = require('mongoose');
 const { connectDatabase } = require('./config/database');
 const Product = require('./models/Product');
+const { logStartupError } = require('./utils/logger');
 
 const port = Number(process.env.PORT) || 3002;
 
@@ -26,6 +27,6 @@ async function startServer() {
 }
 
 startServer().catch((error) => {
-  console.error('Não foi possível iniciar o Catalog Service:', error.message);
+  logStartupError(error);
   process.exit(1);
 });

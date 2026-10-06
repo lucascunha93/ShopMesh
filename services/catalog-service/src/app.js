@@ -2,10 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const productRoutes = require('./routes/productRoutes');
 const asyncHandler = require('./utils/asyncHandler');
+const { logHttpFailures, logRequestError } = require('./utils/logger');
 
 const app = express();
 app.disable('x-powered-by');
 
+app.use((req, res, next) => {
+  logHttpFailures(req, res, Date.now());
+  next();
+});
 app.use(express.json());
 
 app.get('/health', asyncHandler(async (req, res) => {
@@ -29,6 +34,9 @@ app.use((error, req, res, next) => {
   }
 
   const status = error.status || 500;
+  if (status >= 500) {
+    logRequestError(error, req, status);
+  }
   const response = { message: status >= 500 ? 'Erro interno do servidor' : error.message };
 
   if (error.details) {
