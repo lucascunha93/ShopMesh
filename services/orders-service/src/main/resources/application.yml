@@ -1,0 +1,19 @@
+server:
+  port: ${PORT:8081}
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/orders_db}
+    username: ${DATABASE_USER:shopmesh}
+    password: ${DATABASE_PASSWORD:shopmesh}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+jwt:
+  # Deve ser idêntico ao JWT_SECRET usado pelo Auth Service.
+  secret: ${JWT_SECRET}
+
+catalog:
+  service-url: ${CATALOG_SERVICE_URL:http://localhost:3002}

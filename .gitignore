@@ -14,6 +14,10 @@ target/
 *.jar
 .mvn/
 !.mvn/wrapper/maven-wrapper.jar
+!services/orders-service/.mvn/
+!services/orders-service/.mvn/wrapper/
+!services/orders-service/.mvn/wrapper/maven-wrapper.jar
+!services/orders-service/.mvn/wrapper/maven-wrapper.properties
 
 # IDEs
 .vscode/

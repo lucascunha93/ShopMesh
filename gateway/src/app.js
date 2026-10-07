@@ -34,6 +34,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', createServiceProxy(config.AUTH_SERVICE_URL, 'auth'));
 app.use('/api/catalog', createServiceProxy(config.CATALOG_SERVICE_URL, 'catalog'));
+app.use('/api/orders', createServiceProxy(config.ORDERS_SERVICE_URL, 'orders'));
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Rota não encontrada' });
