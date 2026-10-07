@@ -51,7 +51,7 @@ public class OrderService {
         }
 
         order.setTotalAmount(totalAmount);
-        return OrderResponse.from(orderRepository.save(order));
+        return OrderResponse.from(orderRepository.saveAndFlush(order));
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +80,6 @@ public class OrderService {
         }
 
         order.setStatus(newStatus);
-        return OrderResponse.from(orderRepository.save(order));
+        return OrderResponse.from(orderRepository.saveAndFlush(order));
     }
 }
