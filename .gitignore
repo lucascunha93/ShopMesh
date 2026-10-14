@@ -18,6 +18,10 @@ target/
 !services/orders-service/.mvn/wrapper/
 !services/orders-service/.mvn/wrapper/maven-wrapper.jar
 !services/orders-service/.mvn/wrapper/maven-wrapper.properties
+!services/payments-service/.mvn/
+!services/payments-service/.mvn/wrapper/
+!services/payments-service/.mvn/wrapper/maven-wrapper.jar
+!services/payments-service/.mvn/wrapper/maven-wrapper.properties
 
 # IDEs
 .vscode/
@@ -35,7 +39,11 @@ Thumbs.db
 logs/
 *.log
 
-# Kubernetes secrets locais (nunca commitar)
 *-secrets.yaml
 
 *.github/
+
+/shared-jwt-secret.txt
+/register*.json
+/order*.json
+/product.json

@@ -8,11 +8,14 @@ import com.shopmesh.orders.dto.OrderResponse;
 import com.shopmesh.orders.entity.Order;
 import com.shopmesh.orders.entity.OrderItem;
 import com.shopmesh.orders.entity.OrderStatus;
+import com.shopmesh.orders.event.OrderCreatedDomainEvent;
+import com.shopmesh.orders.event.OrderCreatedEvent;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.exception.InvalidOrderStatusTransitionException;
 import com.shopmesh.orders.exception.OrderNotFoundException;
 import com.shopmesh.orders.repository.OrderRepository;
 import com.shopmesh.orders.security.AuthContext;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,10 +28,14 @@ import java.util.UUID;
 public class OrderService {
     private final OrderRepository orderRepository;
     private final CatalogClient catalogClient;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public OrderService(OrderRepository orderRepository, CatalogClient catalogClient) {
+    public OrderService(OrderRepository orderRepository,
+                        CatalogClient catalogClient,
+                        ApplicationEventPublisher eventPublisher) {
         this.orderRepository = orderRepository;
         this.catalogClient = catalogClient;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -51,7 +58,9 @@ public class OrderService {
         }
 
         order.setTotalAmount(totalAmount);
-        return OrderResponse.from(orderRepository.saveAndFlush(order));
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        eventPublisher.publishEvent(new OrderCreatedDomainEvent(OrderCreatedEvent.from(savedOrder)));
+        return OrderResponse.from(savedOrder);
     }
 
     @Transactional(readOnly = true)

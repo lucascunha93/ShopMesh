@@ -6,7 +6,11 @@ Serviço de pedidos do ShopMesh, implementado com Spring Boot 3, Java 21, Spring
 
 O PostgreSQL local deve estar disponível em `localhost:5432`, com o banco `orders_db` e usuário/senha `shopmesh`. O serviço lê `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`, `JWT_SECRET`, `CATALOG_SERVICE_URL` e `PORT`; os valores locais estão em `.env.example`.
 
-Copie `.env.example` para `.env` e ajuste `JWT_SECRET` para o **mesmo valor exato** de `JWT_SECRET` usado pelo Auth Service. Os dois serviços precisam compartilhar o segredo para que os tokens HS256 emitidos pelo Auth sejam aceitos aqui. O Spring não carrega `.env` automaticamente; exporte as variáveis no terminal ou configure-as no ambiente antes de executar o Maven Wrapper.
+O `spring-dotenv` carrega automaticamente o arquivo `.env` da pasta do serviço ao iniciar a aplicação. Copie `.env.example` para `.env` e ajuste `JWT_SECRET` para o **mesmo valor exato** de `JWT_SECRET` usado pelo Auth Service. Os dois serviços precisam compartilhar o segredo para que os tokens HS256 emitidos pelo Auth sejam aceitos aqui. Uma variável definida no ambiente real do sistema tem precedência sobre a mesma variável no `.env`, conforme observado ao iniciar o serviço com um `PORT` de sistema diferente do configurado no arquivo.
+
+No arranque, o serviço exige que `JWT_SECRET` tenha pelo menos 32 caracteres (256 bits); se não tiver, encerra com uma mensagem explícita em português.
+
+O Orders Service publica `ORDER_CREATED` no tópico Kafka `order.created` somente após o commit do pedido. Configure `KAFKA_BOOTSTRAP_SERVERS` para apontar ao broker; o padrão local é `localhost:9092`. O producer usa `orderId` como chave, habilita idempotência e aguarda confirmação de todas as réplicas (`acks=all`). O contrato dos eventos está em [`docs/events.md`](../../docs/events.md).
 
 O script `infra/postgres-init/init-databases.sql` cria `orders_db` somente na primeira inicialização do volume de dados do Postgres. Se o volume já tiver sido inicializado antes da criação do banco, crie o banco manualmente ou recrie o volume conforme as instruções da raiz do projeto; essa recriação apaga também os dados locais de `auth_db`.
 

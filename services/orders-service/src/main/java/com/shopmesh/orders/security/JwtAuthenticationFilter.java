@@ -30,6 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret, ObjectMapper objectMapper) {
+        if (secret.length() < 32) {
+            throw new IllegalArgumentException("JWT_SECRET precisa ter no mínimo 32 caracteres (256 bits)");
+        }
         this.signingKey = secret.startsWith("base64:")
                 ? Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret.substring("base64:".length())))
                 : Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
