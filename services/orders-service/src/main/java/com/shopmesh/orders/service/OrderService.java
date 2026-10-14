@@ -10,11 +10,15 @@ import com.shopmesh.orders.entity.OrderItem;
 import com.shopmesh.orders.entity.OrderStatus;
 import com.shopmesh.orders.event.OrderCreatedDomainEvent;
 import com.shopmesh.orders.event.OrderCreatedEvent;
+import com.shopmesh.orders.event.PaymentApprovedEvent;
+import com.shopmesh.orders.event.PaymentRejectedEvent;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.exception.InvalidOrderStatusTransitionException;
 import com.shopmesh.orders.exception.OrderNotFoundException;
 import com.shopmesh.orders.repository.OrderRepository;
 import com.shopmesh.orders.security.AuthContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +30,8 @@ import java.util.UUID;
 
 @Service
 public class OrderService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
+
     private final OrderRepository orderRepository;
     private final CatalogClient catalogClient;
     private final ApplicationEventPublisher eventPublisher;
@@ -90,5 +96,36 @@ public class OrderService {
 
         order.setStatus(newStatus);
         return OrderResponse.from(orderRepository.saveAndFlush(order));
+    }
+
+    @Transactional
+    public void handlePaymentApproved(PaymentApprovedEvent event) {
+        orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
+            if (order.getStatus() != OrderStatus.PENDING) {
+                logIgnoredPaymentEvent(order);
+                return;
+            }
+
+            order.setStatus(OrderStatus.CONFIRMED);
+            orderRepository.saveAndFlush(order);
+        }, () -> LOGGER.warn("Evento payment.approved ignorado: pedido {} não encontrado", event.orderId()));
+    }
+
+    @Transactional
+    public void handlePaymentRejected(PaymentRejectedEvent event) {
+        orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
+            if (order.getStatus() != OrderStatus.PENDING) {
+                logIgnoredPaymentEvent(order);
+                return;
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            order.setStatusReason(event.reason());
+            orderRepository.saveAndFlush(order);
+        }, () -> LOGGER.warn("Evento payment.rejected ignorado: pedido {} não encontrado", event.orderId()));
+    }
+
+    private void logIgnoredPaymentEvent(Order order) {
+        LOGGER.info("evento ignorado: pedido já está {}", order.getStatus());
     }
 }

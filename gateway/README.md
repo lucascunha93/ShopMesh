@@ -1,6 +1,6 @@
 # API Gateway
 
-Ponto de entrada HTTP para os serviços Auth, Catalog e Orders do ShopMesh.
+Ponto de entrada HTTP para os serviços Auth, Catalog, Orders e Payments do ShopMesh.
 
 ## Executar localmente
 
@@ -18,7 +18,7 @@ npm install
 npm run dev
 ```
 
-Por padrão, o gateway escuta em `http://localhost:3000` e encaminha para Auth (`http://localhost:3001`), Catalog (`http://localhost:3002`) e Orders (`http://localhost:8081`). Os destinos podem ser configurados com `AUTH_SERVICE_URL`, `CATALOG_SERVICE_URL` e `ORDERS_SERVICE_URL`.
+Por padrão, o gateway escuta em `http://localhost:3000` e encaminha para Auth (`http://localhost:3001`), Catalog (`http://localhost:3002`), Orders (`http://localhost:8081`) e Payments (`http://localhost:8083`). Os destinos podem ser configurados com `AUTH_SERVICE_URL`, `CATALOG_SERVICE_URL`, `ORDERS_SERVICE_URL` e `PAYMENTS_SERVICE_URL`.
 
 O prefixo de cada rota do gateway é removido antes de encaminhar a requisição. Por exemplo, `/api/orders/orders` chega ao Orders Service como `/orders`.
 
@@ -64,6 +64,17 @@ curl http://localhost:3000/api/orders/orders \
 ```
 
 O gateway encaminha a requisição para `http://localhost:8081/orders`. Configure `ORDERS_SERVICE_URL` para alterar o destino.
+
+### Payments Service
+
+O prefixo `/api/payments` é removido antes de encaminhar a requisição. Como o endpoint do Payments Service também começa com `/payments`, o caminho completo chamado pelo cliente repete esse trecho: `/api/payments/payments/order/{orderId}` chega ao serviço como `/payments/order/{orderId}`.
+
+```bash
+curl http://localhost:3000/api/payments/payments/order/<orderId> \
+  -H "Authorization: Bearer <token>"
+```
+
+O destino padrão é `http://localhost:8083`; configure `PAYMENTS_SERVICE_URL` para alterá-lo.
 
 ### Health do gateway
 

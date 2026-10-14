@@ -9,7 +9,31 @@ import org.springframework.kafka.config.TopicBuilder;
 public class OrderKafkaConfiguration {
     @Bean
     public NewTopic orderCreatedTopic() {
-        return TopicBuilder.name(OrderCreatedEventPublisher.ORDER_CREATED_TOPIC)
+        return topic(OrderCreatedEventPublisher.ORDER_CREATED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic paymentApprovedTopic() {
+        return topic("payment.approved");
+    }
+
+    @Bean
+    public NewTopic paymentRejectedTopic() {
+        return topic("payment.rejected");
+    }
+
+    @Bean
+    public NewTopic paymentApprovedDeadLetterTopic() {
+        return topic("payment.approved.DLT");
+    }
+
+    @Bean
+    public NewTopic paymentRejectedDeadLetterTopic() {
+        return topic("payment.rejected.DLT");
+    }
+
+    private NewTopic topic(String name) {
+        return TopicBuilder.name(name)
                 .partitions(3)
                 .replicas(1)
                 .build();

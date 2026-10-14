@@ -43,6 +43,8 @@ public class Order {
     @Column(nullable = false)
     private OrderStatus status = OrderStatus.PENDING;
 
+    private String statusReason;
+
     @NotNull
     @Column(nullable = false, columnDefinition = "NUMERIC")
     private BigDecimal totalAmount;

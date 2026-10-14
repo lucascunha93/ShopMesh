@@ -5,6 +5,7 @@ const configSchema = z.object({
   AUTH_SERVICE_URL: z.string().url().default('http://localhost:3001'),
   CATALOG_SERVICE_URL: z.string().url().default('http://localhost:3002'),
   ORDERS_SERVICE_URL: z.string().url().default('http://localhost:8081'),
+  PAYMENTS_SERVICE_URL: z.string().url().default('http://localhost:8083'),
 });
 
 module.exports = configSchema.parse(process.env);
