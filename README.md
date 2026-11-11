@@ -76,13 +76,13 @@ docker compose up -d
 
 ## Roadmap
 
-- [ ] Auth Service (Node + Postgres + JWT)
-- [ ] Catalog Service (Node + MongoDB)
-- [ ] API Gateway (proxy simples)
-- [ ] Storefront (React)
-- [ ] Orders Service (Java/Spring Boot)
-- [ ] Payments Service (Java/Spring Boot)
-- [ ] Integração via Kafka (eventos de pedido/pagamento)
+- [x] Auth Service (Node + Postgres + JWT)
+- [x] Catalog Service (Node + MongoDB)
+- [x] API Gateway (proxy simples)
+- [x] Storefront (React)
+- [x] Orders Service (Java/Spring Boot)
+- [x] Payments Service (Java/Spring Boot)
+- [x] Integração via Kafka (eventos de pedido/pagamento)
 - [ ] Saga Pattern (orquestração pedidos ↔ pagamentos ↔ estoque)
 - [ ] Admin (Angular)
 - [ ] Observabilidade (Prometheus + Grafana + Jaeger)
