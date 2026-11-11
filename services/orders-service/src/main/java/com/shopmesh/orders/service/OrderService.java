@@ -8,6 +8,8 @@ import com.shopmesh.orders.dto.OrderResponse;
 import com.shopmesh.orders.entity.Order;
 import com.shopmesh.orders.entity.OrderItem;
 import com.shopmesh.orders.entity.OrderStatus;
+import com.shopmesh.orders.event.OrderCancelledDomainEvent;
+import com.shopmesh.orders.event.OrderCancelledEvent;
 import com.shopmesh.orders.event.OrderCreatedDomainEvent;
 import com.shopmesh.orders.event.OrderCreatedEvent;
 import com.shopmesh.orders.event.PaymentApprovedEvent;
@@ -104,7 +106,12 @@ public class OrderService {
         }
 
         order.setStatus(newStatus);
-        return OrderResponse.from(orderRepository.saveAndFlush(order));
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        // Cancelamento manual precisa avisar os demais serviços para liberar a reserva de estoque.
+        if (newStatus == OrderStatus.CANCELLED) {
+            eventPublisher.publishEvent(new OrderCancelledDomainEvent(OrderCancelledEvent.from(savedOrder)));
+        }
+        return OrderResponse.from(savedOrder);
     }
 
     @Transactional

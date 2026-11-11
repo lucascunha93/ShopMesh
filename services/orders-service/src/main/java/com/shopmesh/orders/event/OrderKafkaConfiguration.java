@@ -13,6 +13,11 @@ public class OrderKafkaConfiguration {
     }
 
     @Bean
+    public NewTopic orderCancelledTopic() {
+        return topic(OrderCancelledEventPublisher.ORDER_CANCELLED_TOPIC);
+    }
+
+    @Bean
     public NewTopic stockRejectedTopic() {
         return topic(StockEventListener.STOCK_REJECTED_TOPIC);
     }

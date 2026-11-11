@@ -1,12 +1,18 @@
 const TOPICS = Object.freeze({
   ORDER_CREATED: 'order.created',
+  ORDER_CANCELLED: 'order.cancelled',
   STOCK_RESERVED: 'stock.reserved',
   STOCK_REJECTED: 'stock.rejected',
   PAYMENT_APPROVED: 'payment.approved',
   PAYMENT_REJECTED: 'payment.rejected',
 });
 
-const CONSUMED_TOPICS = [TOPICS.ORDER_CREATED, TOPICS.PAYMENT_APPROVED, TOPICS.PAYMENT_REJECTED];
+const CONSUMED_TOPICS = [
+  TOPICS.ORDER_CREATED,
+  TOPICS.ORDER_CANCELLED,
+  TOPICS.PAYMENT_APPROVED,
+  TOPICS.PAYMENT_REJECTED,
+];
 const PRODUCED_TOPICS = [TOPICS.STOCK_RESERVED, TOPICS.STOCK_REJECTED];
 
 function deadLetterTopic(topic) {

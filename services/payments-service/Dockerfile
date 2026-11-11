@@ -6,7 +6,8 @@ COPY mvnw mvnw
 COPY mvnw.cmd mvnw.cmd
 RUN chmod +x mvnw
 COPY src src
-RUN ./mvnw --batch-mode clean package -DskipTests
+# MAVEN_CONFIG vem definido na imagem e o mvnw o repassa como fase do build
+RUN MAVEN_CONFIG= ./mvnw --batch-mode clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app

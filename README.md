@@ -49,7 +49,7 @@ Storefront ──POST /orders──► Orders (PENDING) ──order.created─�
                                          Catalog efetiva estoque      Catalog libera reserva
 ```
 
-Notifications observa todos esses eventos e avisa o cliente. O contrato completo
+Notifications observa todos esses eventos (e `order.cancelled`, do cancelamento manual pelo Admin) e avisa o cliente. O contrato completo
 (tópicos, formatos, DLT e transições de estado) está em [`docs/events.md`](docs/events.md).
 
 ## Stack
@@ -109,8 +109,8 @@ docker compose -f infra/docker-compose.yml up -d
 Depois inicie cada serviço conforme o README dele (`npm run dev` ou `.\mvnw spring-boot:run`).
 Todos os serviços precisam do **mesmo** `JWT_SECRET` (mínimo de 32 caracteres).
 
-> Se a porta 5432 ou 27017 já estiver ocupada, defina `POSTGRES_PORT`/`MONGO_PORT` em
-> `infra/.env` e ajuste as URLs nos `.env` dos serviços.
+> Se a porta 5432, 27017 ou 3001 já estiver ocupada, defina `POSTGRES_PORT`/`MONGO_PORT`/`AUTH_PORT`
+> em `infra/.env` (ajuste as URLs nos `.env` dos serviços se rodá-los no host).
 
 ### Endereços
 
@@ -140,10 +140,13 @@ pagamento, falta de estoque, estoque final e notificações):
 
 | Projeto | Comando |
 |---|---|
-| catalog-service, notifications-service | `npm test` |
+| catalog-service, notifications-service, auth-service, gateway | `npm test` |
 | orders-service, payments-service | `.\mvnw test` |
 | admin | `npx ng test --watch=false` |
-| storefront | `npm run build` (checagem de tipos) |
+| storefront | `npm test` (Vitest) e `npm run build` (checagem de tipos) |
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda todos esses testes, os
+builds dos frontends e, ao final, sobe a stack com Docker Compose e executa o smoke test.
 
 ## Kubernetes
 
@@ -168,8 +171,9 @@ ou `kubectl apply -k k8s/overlays/observability` para incluir Prometheus, Grafan
 ### Limitações conhecidas
 
 - A Saga é **coreografada** (cada serviço reage a eventos), não orquestrada por um coordenador.
-- Confirmar/cancelar um pedido `PENDING` manualmente no Admin não publica evento: não desfaz
-  reservas de estoque nem cobranças já feitas pelos outros serviços.
+- Cancelar manualmente um pedido `PENDING` no Admin publica `order.cancelled` (libera a reserva de
+  estoque e avisa o cliente), mas uma cobrança já aprovada não é estornada. Confirmar manualmente
+  não publica evento: a Saga segue e o pagamento ainda pode efetivar ou liberar o estoque.
 - O Notifications Service guarda o feed em memória: ele recomeça vazio a cada reinício.
 - O preço é copiado do catálogo na criação do pedido; não há carrinho persistido no servidor.
 

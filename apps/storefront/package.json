@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,12 +18,15 @@
     "react-router-dom": "^7.8.2"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.6",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "autoprefixer": "^10.4.21",
+    "jsdom": "^31.0.0",
+    "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.8.3",
-    "vite": "^7.1.4"
+    "vite": "^7.1.4",
+    "vitest": "^5.1.0"
   }
 }

@@ -41,7 +41,7 @@ logs/
 
 *-secrets.yaml
 
-*.github/
+.github/modernize/
 
 /shared-jwt-secret.txt
 /register*.json
@@ -53,3 +53,6 @@ logs/
 
 # Angular
 .angular/
+
+# Artefatos de build do TypeScript
+*.tsbuildinfo

@@ -70,6 +70,25 @@ test('estoque rejeitado inclui o motivo', async () => {
   assert.match(notification.message, /Estoque insuficiente para Café/);
 });
 
+test('cancelamento manual do pedido notifica o cliente', async () => {
+  const isolatedStore = createNotificationStore({ maxSize: 5 });
+  const isolated = createNotificationHandlers({ store: isolatedStore });
+  const { schema, handle } = isolated['order.cancelled'];
+
+  await handle(schema.parse({
+    eventId: '66666666-6666-4666-8666-666666666666',
+    eventType: 'ORDER_CANCELLED',
+    occurredAt: '2026-10-07T03:20:06.021Z',
+    orderId,
+    userId: userA,
+    reason: null,
+  }));
+
+  const [notification] = isolatedStore.list({ userId: userA });
+  assert.equal(notification.type, 'ORDER_CANCELLED');
+  assert.match(notification.message, /#6f1c3b1e.*cancelado/);
+});
+
 test('store descarta as notificações mais antigas acima do limite', () => {
   const small = createNotificationStore({ maxSize: 2 });
   small.add({ eventId: 'a', userId: userA });

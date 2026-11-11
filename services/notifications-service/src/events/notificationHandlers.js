@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { TOPICS } = require('./topics');
 const {
   orderCreatedSchema,
+  orderCancelledSchema,
   stockRejectedSchema,
   paymentApprovedSchema,
   paymentRejectedSchema,
@@ -17,6 +18,12 @@ function shortId(orderId) {
 }
 
 const TEMPLATES = {
+  ORDER_CANCELLED: (event) => ({
+    type: 'ORDER_CANCELLED',
+    title: 'Pedido cancelado',
+    message: `O pedido #${shortId(event.orderId)} foi cancelado`
+      + `${event.reason ? `: ${event.reason}` : '.'}`,
+  }),
   ORDER_CREATED: (event) => ({
     type: 'ORDER_RECEIVED',
     title: 'Pedido recebido',
@@ -77,6 +84,7 @@ function createNotificationHandlers({ store }) {
   return {
     [TOPICS.ORDER_CREATED]: { schema: orderCreatedSchema, handle: notify },
     [TOPICS.STOCK_REJECTED]: { schema: stockRejectedSchema, handle: notify },
+    [TOPICS.ORDER_CANCELLED]: { schema: orderCancelledSchema, handle: notify },
     [TOPICS.PAYMENT_APPROVED]: { schema: paymentApprovedSchema, handle: notify },
     [TOPICS.PAYMENT_REJECTED]: { schema: paymentRejectedSchema, handle: notify },
   };

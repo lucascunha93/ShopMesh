@@ -19,6 +19,13 @@ const orderCreatedSchema = z.object({
   })).min(1),
 });
 
+const orderCancelledSchema = z.object({
+  ...baseEvent,
+  eventType: z.literal('ORDER_CANCELLED'),
+  userId: z.string().uuid(),
+  reason: z.string().nullish(),
+});
+
 const paymentApprovedSchema = z.object({
   ...baseEvent,
   eventType: z.literal('PAYMENT_APPROVED'),
@@ -36,4 +43,9 @@ const paymentRejectedSchema = z.object({
   reason: z.string().optional(),
 });
 
-module.exports = { orderCreatedSchema, paymentApprovedSchema, paymentRejectedSchema };
+module.exports = {
+  orderCreatedSchema,
+  orderCancelledSchema,
+  paymentApprovedSchema,
+  paymentRejectedSchema,
+};

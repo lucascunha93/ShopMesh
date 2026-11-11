@@ -83,3 +83,23 @@ test('transições da Saga seguem o contrato', () => {
   assert.equal(canTransition(SAGA_STATUS.COMMITTED, SAGA_STATUS.RELEASED), false);
   assert.equal(canTransition(SAGA_STATUS.RELEASED, SAGA_STATUS.COMMITTED), false);
 });
+
+test('order.cancelled libera a reserva do pedido', async () => {
+  const released = [];
+  const stockService = { releaseForOrder: async (event) => { released.push(event.orderId); } };
+  const handlers = createStockEventHandlers({ stockService, producer: { send: async () => {} } });
+  const { schema, handle } = handlers['order.cancelled'];
+
+  const event = schema.parse({
+    eventId: 'b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+    eventType: 'ORDER_CANCELLED',
+    occurredAt: '2026-10-07T03:20:06.021Z',
+    orderId,
+    userId,
+    reason: null,
+  });
+  await handle(event);
+
+  assert.deepEqual(released, [orderId]);
+  assert.equal(schema.safeParse({ ...event, eventType: 'ORDER_CREATED' }).success, false);
+});

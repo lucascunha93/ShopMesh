@@ -1,5 +1,6 @@
 const TOPICS = Object.freeze({
   ORDER_CREATED: 'order.created',
+  ORDER_CANCELLED: 'order.cancelled',
   STOCK_REJECTED: 'stock.rejected',
   PAYMENT_APPROVED: 'payment.approved',
   PAYMENT_REJECTED: 'payment.rejected',

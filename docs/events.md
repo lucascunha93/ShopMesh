@@ -9,6 +9,7 @@ contrato compartilhado é o JSON, não classes Java ou JavaScript compartilhadas
 | Tópico | Produtor | Consumidor |
 | --- | --- | --- |
 | `order.created` | `orders-service` | `catalog-service`, `notifications-service` |
+| `order.cancelled` | `orders-service` | `catalog-service`, `notifications-service` |
 | `stock.reserved` | `catalog-service` | `payments-service` |
 | `stock.rejected` | `catalog-service` | `orders-service`, `notifications-service` |
 | `payment.approved` | `payments-service` | `orders-service`, `catalog-service`, `notifications-service` |
@@ -202,6 +203,29 @@ mantém o formato da versão 1.
 }
 ```
 
+## `ORDER_CANCELLED` — tópico `order.cancelled`
+
+Produzido pelo `orders-service` somente quando um administrador cancela
+manualmente um pedido `PENDING` (cancelamentos da própria Saga já são
+propagados por `stock.rejected` e `payment.rejected`). O `catalog-service`
+libera a reserva de estoque, se existir; o `notifications-service` avisa o
+cliente. `reason` pode ser `null`.
+
+Se o pagamento ainda estiver em andamento, um `payment.approved` tardio é
+ignorado pelo Orders (pedido já cancelado) e pelo Catalog (reserva já liberada);
+o estorno da cobrança não é automatizado.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "ORDER_CANCELLED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid",
+  "reason": null
+}
+```
+
 ## Histórico de versões
 
 - **v1 — Fase 7:** contrato com `order.created`, `payment.approved` e
@@ -213,3 +237,5 @@ mantém o formato da versão 1.
 - **v2.1 — Fase 9:** sem mudança de formato. O `notifications-service` passa a
   consumir `order.created`, `stock.rejected`, `payment.approved` e
   `payment.rejected`; os cabeçalhos das DLTs foram documentados.
+- **v2.2:** adiciona `order.cancelled` (cancelamento manual de pedido `PENDING`
+  pelo Admin), consumido por Catalog e Notifications.

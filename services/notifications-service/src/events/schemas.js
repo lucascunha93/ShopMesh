@@ -13,6 +13,12 @@ const orderCreatedSchema = z.object({
   totalAmount: z.number(),
 });
 
+const orderCancelledSchema = z.object({
+  ...baseEvent,
+  eventType: z.literal('ORDER_CANCELLED'),
+  reason: z.string().nullish(),
+});
+
 const stockRejectedSchema = z.object({
   ...baseEvent,
   eventType: z.literal('STOCK_REJECTED'),
@@ -36,6 +42,7 @@ const paymentRejectedSchema = z.object({
 
 module.exports = {
   orderCreatedSchema,
+  orderCancelledSchema,
   stockRejectedSchema,
   paymentApprovedSchema,
   paymentRejectedSchema,
