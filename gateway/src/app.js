@@ -2,18 +2,21 @@ const express = require('express');
 const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const config = require('./config');
+const { httpMetricsMiddleware, metricsHandler } = require('./observability/metrics');
 const { logHttpFailures, logProxyError, logRequestError } = require('./utils/logger');
 
 const app = express();
 app.disable('x-powered-by');
-app.use(cors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173'] }));
+app.use(httpMetricsMiddleware);
+app.get('/metrics', metricsHandler);
+app.use(cors({ origin: config.CORS_ORIGINS }));
 app.use((req, res, next) => {
   logHttpFailures(req, res, Date.now());
   next();
 });
 
 function createServiceProxy(target, serviceName) {
-  return createProxyMiddleware({
+  const proxy = createProxyMiddleware({
     target,
     changeOrigin: true,
     on: {
@@ -26,7 +29,22 @@ function createServiceProxy(target, serviceName) {
       },
     },
   });
+
+  // O label "uri" das métricas usa o prefixo do serviço, não a URL completa.
+  return (req, res, next) => {
+    req.metricsRoute = req.baseUrl;
+    return proxy(req, res, next);
+  };
 }
+
+// Endpoints internos de observabilidade dos serviços não são expostos pelo gateway.
+const INTERNAL_PATH = /^\/api\/[^/]+\/(actuator|metrics)(\/|$)/i;
+app.use((req, res, next) => {
+  if (INTERNAL_PATH.test(req.path)) {
+    return res.status(404).json({ message: 'Rota não encontrada' });
+  }
+  return next();
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'api-gateway' });
@@ -36,6 +54,7 @@ app.use('/api/auth', createServiceProxy(config.AUTH_SERVICE_URL, 'auth'));
 app.use('/api/catalog', createServiceProxy(config.CATALOG_SERVICE_URL, 'catalog'));
 app.use('/api/orders', createServiceProxy(config.ORDERS_SERVICE_URL, 'orders'));
 app.use('/api/payments', createServiceProxy(config.PAYMENTS_SERVICE_URL, 'payments'));
+app.use('/api/notifications', createServiceProxy(config.NOTIFICATIONS_SERVICE_URL, 'notifications'));
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Rota não encontrada' });

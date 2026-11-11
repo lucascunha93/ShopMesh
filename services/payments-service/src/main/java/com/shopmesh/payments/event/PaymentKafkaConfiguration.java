@@ -18,8 +18,8 @@ public class PaymentKafkaConfiguration {
     }
 
     @Bean
-    public NewTopic orderCreatedDeadLetterTopic() {
-        return topic("order.created.DLT");
+    public NewTopic stockReservedDeadLetterTopic() {
+        return topic("stock.reserved.DLT");
     }
 
     @Bean

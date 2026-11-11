@@ -1,0 +1,15 @@
+# Aplicação completa + observabilidade, com tracing ligado.
+#   kubectl apply -k k8s/overlays/observability
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shopmesh
+
+resources:
+  - ../../base
+  - ../../observability
+
+configMapGenerator:
+  - name: shopmesh-config
+    behavior: merge
+    literals:
+      - TRACING_ENABLED=true

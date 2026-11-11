@@ -1,6 +1,6 @@
 # API Gateway
 
-Ponto de entrada HTTP para os serviços Auth, Catalog, Orders e Payments do ShopMesh.
+Ponto de entrada HTTP para os serviços Auth, Catalog, Orders, Payments e Notifications do ShopMesh.
 
 ## Executar localmente
 
@@ -18,7 +18,9 @@ npm install
 npm run dev
 ```
 
-Por padrão, o gateway escuta em `http://localhost:3000` e encaminha para Auth (`http://localhost:3001`), Catalog (`http://localhost:3002`), Orders (`http://localhost:8081`) e Payments (`http://localhost:8083`). Os destinos podem ser configurados com `AUTH_SERVICE_URL`, `CATALOG_SERVICE_URL`, `ORDERS_SERVICE_URL` e `PAYMENTS_SERVICE_URL`.
+Por padrão, o gateway escuta em `http://localhost:3000` e encaminha para Auth (`http://localhost:3001`), Catalog (`http://localhost:3002`), Orders (`http://localhost:8081`), Payments (`http://localhost:8083`) e Notifications (`http://localhost:3003`). Os destinos podem ser configurados com `AUTH_SERVICE_URL`, `CATALOG_SERVICE_URL`, `ORDERS_SERVICE_URL`, `PAYMENTS_SERVICE_URL` e `NOTIFICATIONS_SERVICE_URL`.
+
+`CORS_ORIGINS` (lista separada por vírgulas) define as origens liberadas; o padrão inclui o Storefront (`:5173`) e o Admin (`:4200`). Caminhos internos de observabilidade dos serviços (`/api/<serviço>/actuator` e `/api/<serviço>/metrics`) retornam `404`; as métricas do próprio gateway ficam em `GET /metrics`.
 
 O prefixo de cada rota do gateway é removido antes de encaminhar a requisição. Por exemplo, `/api/orders/orders` chega ao Orders Service como `/orders`.
 
@@ -26,7 +28,7 @@ O prefixo de cada rota do gateway é removido antes de encaminhar a requisição
 
 ### Auth Service
 
-O storefront não tem uma tela de cadastro. Crie a conta pelo endpoint abaixo e depois entre em `/login` usando o mesmo email e senha:
+O storefront tem cadastro em `/register`. Também é possível criar a conta pela API:
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/register \
@@ -48,8 +50,11 @@ curl -X POST http://localhost:3000/api/auth/login \
 curl "http://localhost:3000/api/catalog/products?page=1&limit=12"
 ```
 
+Criar produtos exige um token de `ADMIN`:
+
 ```bash
 curl -X POST http://localhost:3000/api/catalog/products \
+  -H "Authorization: Bearer <token-admin>" \
   -H "Content-Type: application/json" \
   -d '{"name":"Café especial","price":39.9,"category":"bebidas","stock":12}'
 ```
@@ -75,6 +80,13 @@ curl http://localhost:3000/api/payments/payments/order/<orderId> \
 ```
 
 O destino padrão é `http://localhost:8083`; configure `PAYMENTS_SERVICE_URL` para alterá-lo.
+
+### Notifications Service
+
+```bash
+curl http://localhost:3000/api/notifications/notifications/me \
+  -H "Authorization: Bearer <token>"
+```
 
 ### Health do gateway
 

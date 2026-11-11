@@ -22,4 +22,12 @@ function authenticateToken(req, res, next) {
   }
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.auth || req.auth.role !== 'ADMIN') {
+    return res.status(403).json({ message: 'Acesso restrito a administradores' });
+  }
+  return next();
+}
+
 module.exports = authenticateToken;
+module.exports.requireAdmin = requireAdmin;

@@ -2,7 +2,7 @@ package com.shopmesh.payments.service;
 
 import com.shopmesh.payments.entity.Payment;
 import com.shopmesh.payments.entity.PaymentStatus;
-import com.shopmesh.payments.event.OrderCreatedEvent;
+import com.shopmesh.payments.event.StockReservedEvent;
 import com.shopmesh.payments.repository.PaymentRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +61,7 @@ class PaymentProcessorTest {
 
     @Test
     void processingSameEventTwiceCreatesOnlyOnePayment() {
-        OrderCreatedEvent event = event("699.80");
+        StockReservedEvent event = event("699.80");
         Payment savedPayment = new Payment();
         savedPayment.setOrderId(event.orderId());
         savedPayment.setUserId(event.userId());
@@ -83,7 +83,7 @@ class PaymentProcessorTest {
 
     @Test
     void loadsExistingPaymentWhenConcurrentInsertViolatesUniqueConstraint() {
-        OrderCreatedEvent event = event("699.80");
+        StockReservedEvent event = event("699.80");
         Payment existingPayment = new Payment();
         existingPayment.setOrderId(event.orderId());
         existingPayment.setUserId(event.userId());
@@ -102,7 +102,7 @@ class PaymentProcessorTest {
     }
 
     private void assertStatusForAmount(String amount, PaymentStatus expectedStatus, String expectedReason) {
-        OrderCreatedEvent event = event(amount);
+        StockReservedEvent event = event(amount);
         when(paymentRepository.findByOrderId(event.orderId())).thenReturn(Optional.empty());
         when(paymentWriter.saveAndFlush(any(Payment.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0, Payment.class));
@@ -117,15 +117,15 @@ class PaymentProcessorTest {
         assertEquals(expectedStatus, paymentCaptor.getValue().getStatus());
     }
 
-    private OrderCreatedEvent event(String amount) {
-        return new OrderCreatedEvent(
+    private StockReservedEvent event(String amount) {
+        return new StockReservedEvent(
                 UUID.randomUUID(),
-                "ORDER_CREATED",
+                "STOCK_RESERVED",
                 Instant.parse("2026-10-07T03:20:06.021Z"),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 new BigDecimal(amount),
-                java.util.List.of()
+                java.util.List.of(new StockReservedEvent.Item("product-123", 2))
         );
     }
 }

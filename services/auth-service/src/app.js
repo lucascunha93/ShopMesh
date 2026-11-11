@@ -1,4 +1,5 @@
 const express = require('express');
+const { httpMetricsMiddleware, metricsHandler } = require('./observability/metrics');
 const authRoutes = require('./routes/authRoutes');
 const asyncHandler = require('./utils/asyncHandler');
 const prisma = require('./config/prisma');
@@ -6,6 +7,8 @@ const { logHttpFailures, logRequestError } = require('./utils/logger');
 
 const app = express();
 app.disable('x-powered-by');
+app.use(httpMetricsMiddleware);
+app.get('/metrics', metricsHandler);
 
 app.use((req, res, next) => {
   logHttpFailures(req, res, Date.now());

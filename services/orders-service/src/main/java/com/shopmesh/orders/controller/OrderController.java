@@ -3,12 +3,14 @@ package com.shopmesh.orders.controller;
 import com.shopmesh.orders.dto.CreateOrderRequest;
 import com.shopmesh.orders.dto.OrderResponse;
 import com.shopmesh.orders.dto.UpdateOrderStatusRequest;
+import com.shopmesh.orders.entity.OrderStatus;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.security.AuthContext;
 import com.shopmesh.orders.service.OrderService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,8 +44,20 @@ public class OrderController {
 
     @GetMapping
     public Page<OrderResponse> list(@RequestAttribute("authContext") AuthContext authContext,
-                                    @PageableDefault(size = 20) Pageable pageable) {
+                                    @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
+                                    Pageable pageable) {
         return orderService.listForUser(authContext.userId(), pageable);
+    }
+
+    @GetMapping("/all")
+    public Page<OrderResponse> listAll(@RequestAttribute("authContext") AuthContext authContext,
+                                       @RequestParam(required = false) OrderStatus status,
+                                       @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
+                                       Pageable pageable) {
+        if (!"ADMIN".equals(authContext.role())) {
+            throw new AccessDeniedException();
+        }
+        return orderService.listAll(status, pageable);
     }
 
     @GetMapping("/{id}")

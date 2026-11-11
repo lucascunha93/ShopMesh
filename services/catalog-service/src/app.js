@@ -1,4 +1,5 @@
 const express = require('express');
+const { httpMetricsMiddleware, metricsHandler } = require('./observability/metrics');
 const mongoose = require('mongoose');
 const productRoutes = require('./routes/productRoutes');
 const asyncHandler = require('./utils/asyncHandler');
@@ -6,6 +7,8 @@ const { logHttpFailures, logRequestError } = require('./utils/logger');
 
 const app = express();
 app.disable('x-powered-by');
+app.use(httpMetricsMiddleware);
+app.get('/metrics', metricsHandler);
 
 app.use((req, res, next) => {
   logHttpFailures(req, res, Date.now());

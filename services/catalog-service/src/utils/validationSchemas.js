@@ -5,6 +5,7 @@ const listProductsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   category: z.string().trim().optional(),
   search: z.string().trim().min(1).optional(),
+  includeInactive: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
 });
 
 const createProductSchema = z.object({
@@ -12,8 +13,20 @@ const createProductSchema = z.object({
   price: z.number().min(0),
   description: z.string().optional(),
   category: z.string().optional(),
-  stock: z.number().min(0).optional(),
+  stock: z.number().int().min(0).optional(),
   imageUrl: z.string().optional(),
 });
 
-module.exports = { listProductsSchema, createProductSchema };
+const updateProductSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  price: z.number().min(0).optional(),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  stock: z.number().int().min(0).optional(),
+  imageUrl: z.string().optional(),
+  active: z.boolean().optional(),
+}).strict().refine((data) => Object.keys(data).length > 0, {
+  message: 'Informe ao menos um campo para atualizar',
+});
+
+module.exports = { listProductsSchema, createProductSchema, updateProductSchema };

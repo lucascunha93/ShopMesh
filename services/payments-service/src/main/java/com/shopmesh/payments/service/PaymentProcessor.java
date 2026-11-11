@@ -2,7 +2,7 @@ package com.shopmesh.payments.service;
 
 import com.shopmesh.payments.entity.Payment;
 import com.shopmesh.payments.entity.PaymentStatus;
-import com.shopmesh.payments.event.OrderCreatedEvent;
+import com.shopmesh.payments.event.StockReservedEvent;
 import com.shopmesh.payments.repository.PaymentRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -28,12 +28,12 @@ public class PaymentProcessor {
     }
 
     @Transactional
-    public Payment process(OrderCreatedEvent event) {
+    public Payment process(StockReservedEvent event) {
         return paymentRepository.findByOrderId(event.orderId())
                 .orElseGet(() -> createPaymentOrLoadExisting(event));
     }
 
-    private Payment createPaymentOrLoadExisting(OrderCreatedEvent event) {
+    private Payment createPaymentOrLoadExisting(StockReservedEvent event) {
         Payment payment = new Payment();
         payment.setOrderId(event.orderId());
         payment.setUserId(event.userId());

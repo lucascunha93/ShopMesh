@@ -34,8 +34,9 @@ schema com `ddl-auto: update`, como no Orders Service.
 
 ## Fluxo de pagamento e idempotência
 
-O consumidor do grupo `payments-service` lê mensagens `order.created` desde o
-início do tópico. Campos desconhecidos no JSON são ignorados. O
+O consumidor do grupo `payments-service` lê mensagens `stock.reserved` desde o
+início do tópico: a cobrança só acontece depois que o Catalog Service reservou o estoque
+(Saga v2). Campos desconhecidos no JSON são ignorados. O
 `PaymentProcessor` decide e grava a cobrança em uma transação: valores até
 `PAYMENT_APPROVAL_LIMIT` (inclusive) são aprovados; valores acima são
 rejeitados com um motivo legível.
@@ -46,9 +47,11 @@ pagamento já gravado e publica novamente o resultado. Assim, uma falha ao
 publicar o resultado não cria outra cobrança. A publicação síncrona espera até
 10 segundos e sua falha aciona novas tentativas Kafka.
 
-Depois de três tentativas, mensagens de `order.created` que ainda falharem são
-enviadas para `order.created.DLT` (Dead Letter Topic), para inspeção e
-reprocessamento operacional. Os tópicos `payment.approved` e
+Depois de três tentativas, mensagens de `stock.reserved` que ainda falharem são
+enviadas para `stock.reserved.DLT` (Dead Letter Topic), para inspeção e
+reprocessamento operacional. Mensagens com JSON malformado ou sem campos obrigatórios
+não são retentadas e vão direto para a DLT. Toda mensagem na DLT recebe os cabeçalhos
+`x-rejected-by: payments-service` e `x-error-type`. Os tópicos `payment.approved` e
 `payment.rejected` têm três partições cada; seus tópicos DLT também são
 declarados.
 
@@ -76,4 +79,14 @@ curl.exe http://localhost:8083/payments/order/<order-id> `
 ```
 
 Não existe endpoint para criar pagamentos: eles são criados somente pelo
-consumo de eventos `order.created`.
+consumo de eventos `stock.reserved`. Pedidos rejeitados por falta de estoque nunca
+geram pagamento (a consulta retorna `404`).
+
+## Observabilidade
+
+- Métricas Prometheus em `GET /actuator/prometheus` e saúde em `GET /actuator/health`
+  (o gateway não expõe `/actuator`).
+- Tracing OpenTelemetry desligado por padrão. Com `TRACING_ENABLED=true`, os spans vão para
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (padrão `http://localhost:4318/v1/traces`, o Jaeger do
+  profile `observability`). O contexto é propagado pelos cabeçalhos das mensagens Kafka.
+

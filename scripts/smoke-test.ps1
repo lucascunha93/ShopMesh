@@ -1,5 +1,8 @@
 param(
-    [string]$GatewayUrl = 'http://localhost:3000'
+    [string]$GatewayUrl = 'http://localhost:3000',
+    # Administrador inicial criado pelo Auth Service a partir de ADMIN_EMAIL/ADMIN_PASSWORD.
+    [string]$AdminEmail = $(if ($env:SHOPMESH_ADMIN_EMAIL) { $env:SHOPMESH_ADMIN_EMAIL } else { 'admin@shopmesh.local' }),
+    [string]$AdminPassword = $(if ($env:SHOPMESH_ADMIN_PASSWORD) { $env:SHOPMESH_ADMIN_PASSWORD } else { 'change-me-admin-password' })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -157,7 +160,8 @@ $healthChecks = @(
     [PSCustomObject]@{ Name = 'Auth Service'; Path = '/api/auth/health'; ExpectedService = 'auth-service' },
     [PSCustomObject]@{ Name = 'Catalog Service'; Path = '/api/catalog/health'; ExpectedService = 'catalog-service' },
     [PSCustomObject]@{ Name = 'Orders Service'; Path = '/api/orders/health'; ExpectedService = 'orders-service' },
-    [PSCustomObject]@{ Name = 'Payments Service'; Path = '/api/payments/health'; ExpectedService = 'payments-service' }
+    [PSCustomObject]@{ Name = 'Payments Service'; Path = '/api/payments/health'; ExpectedService = 'payments-service' },
+    [PSCustomObject]@{ Name = 'Notifications Service'; Path = '/api/notifications/health'; ExpectedService = 'notifications-service' }
 )
 
 foreach ($healthCheck in $healthChecks) {
@@ -205,7 +209,37 @@ if (-not $registrationValid) {
     exit 1
 }
 
-Write-Host 'Etapa 2: criando produto via Gateway...'
+Write-Host 'Etapa 2: autenticando administrador...'
+$adminLoginResponse = Invoke-ApiRequest `
+    -Method 'Post' `
+    -Url "$baseUrl/api/auth/login" `
+    -Body @{ email = $AdminEmail; password = $AdminPassword }
+$adminUser = Get-JsonProperty -InputObject $adminLoginResponse.Data -Name 'user'
+$adminRole = Get-JsonProperty -InputObject $adminUser -Name 'role'
+$script:adminToken = Get-JsonProperty -InputObject $adminLoginResponse.Data -Name 'token'
+$adminValid = $adminLoginResponse.Success -and $adminRole -eq 'ADMIN'
+Write-Check -Name 'login do administrador via Gateway' `
+    -Success $adminValid `
+    -Expected "HTTP 200 com role=ADMIN para $AdminEmail" `
+    -Actual "HTTP $($adminLoginResponse.StatusCode), role=$adminRole"
+
+if (-not $adminValid) {
+    Write-Host 'Configure ADMIN_EMAIL/ADMIN_PASSWORD no Auth Service e informe -AdminEmail/-AdminPassword.'
+    Write-Host "Resumo: $script:passed PASS, $script:failed FAIL."
+    exit 1
+}
+
+$customerProductResponse = Invoke-ApiRequest `
+    -Method 'Post' `
+    -Url "$baseUrl/api/catalog/products" `
+    -Body @{ name = 'Produto nao autorizado'; price = 1 } `
+    -Token $script:token
+Write-Check -Name 'cliente nao pode criar produto' `
+    -Success ($customerProductResponse.StatusCode -eq 403) `
+    -Expected 'HTTP 403' `
+    -Actual "HTTP $($customerProductResponse.StatusCode)"
+
+Write-Host 'Etapa 3: criando produto via Gateway...'
 $productName = "ShopMesh smoke $uniqueSuffix"
 $productRequest = @{
     name        = $productName
@@ -217,8 +251,9 @@ $productRequest = @{
 $productResponse = Invoke-ApiRequest `
     -Method 'Post' `
     -Url "$baseUrl/api/catalog/products" `
-    -Body $productRequest
-$product = Get-JsonProperty -InputObject $productResponse.Data -Name 'product'
+    -Body $productRequest `
+    -Token $script:adminToken
+$product =Get-JsonProperty -InputObject $productResponse.Data -Name 'product'
 if ($null -ne $product) {
     $productId = Get-JsonProperty -InputObject $product -Name '_id'
     if ([string]::IsNullOrWhiteSpace([string]$productId)) {
@@ -250,6 +285,7 @@ $scenarios = @(
         ExpectedAmount = [decimal]699.80
         ExpectedOrderStatus = 'CONFIRMED'
         ExpectedPaymentStatus = 'APPROVED'
+        ExpectedReasonPattern = $null
     },
     [PSCustomObject]@{
         Name = 'Cenario B (rejeitado)'
@@ -257,6 +293,16 @@ $scenarios = @(
         ExpectedAmount = [decimal]6998.00
         ExpectedOrderStatus = 'CANCELLED'
         ExpectedPaymentStatus = 'REJECTED'
+        ExpectedReasonPattern = 'Limite de aprova'
+    },
+    [PSCustomObject]@{
+        # Estoque disponivel apos o Cenario A: 100 - 2 = 98 unidades.
+        Name = 'Cenario C (estoque insuficiente)'
+        Quantity = 500
+        ExpectedAmount = [decimal]174950.00
+        ExpectedOrderStatus = 'CANCELLED'
+        ExpectedPaymentStatus = 'NONE'
+        ExpectedReasonPattern = 'Estoque insuficiente'
     }
 )
 
@@ -301,15 +347,27 @@ foreach ($scenario in $scenarios) {
     if ($scenario.ExpectedOrderStatus -eq 'CANCELLED') {
         $statusReason = Get-JsonProperty -InputObject $order -Name 'statusReason'
         $hasStatusReason = -not [string]::IsNullOrWhiteSpace([string]$statusReason)
+        if ($hasStatusReason -and $null -ne $scenario.ExpectedReasonPattern) {
+            $hasStatusReason = ([string]$statusReason) -match $scenario.ExpectedReasonPattern
+        }
         Write-Check -Name "$($scenario.Name): motivo no pedido" `
             -Success $hasStatusReason `
-            -Expected 'statusReason preenchido' `
+            -Expected "statusReason contendo '$($scenario.ExpectedReasonPattern)'" `
             -Actual $(if ($hasStatusReason) { [string]$statusReason } else { '<vazio>' })
     }
 
     $paymentUrl = "$baseUrl/api/payments/payments/order/$orderId"
     $paymentResponse = Invoke-ApiRequest -Method 'Get' -Url $paymentUrl -Token $script:token
-    $paymentStatus = Get-JsonProperty -InputObject $paymentResponse.Data -Name 'status'
+    if ($scenario.ExpectedPaymentStatus -eq 'NONE') {
+        # Estoque rejeitado: a Saga termina antes da cobranca.
+        Write-Check -Name "$($scenario.Name): nenhum pagamento criado" `
+            -Success ($paymentResponse.StatusCode -eq 404) `
+            -Expected 'HTTP 404' `
+            -Actual "HTTP $($paymentResponse.StatusCode)"
+        continue
+    }
+
+    $paymentStatus =Get-JsonProperty -InputObject $paymentResponse.Data -Name 'status'
     $paymentStatusMatches = $paymentResponse.Success -and $paymentStatus -eq $scenario.ExpectedPaymentStatus
     Write-Check -Name "$($scenario.Name): status do pagamento" `
         -Success $paymentStatusMatches `
@@ -325,6 +383,47 @@ foreach ($scenario in $scenarios) {
             -Actual $(if ($hasPaymentReason) { [string]$paymentReason } else { '<vazio>' })
     }
 }
+
+Write-Host 'Etapa final: conferindo estoque do produto...'
+# A efetiva 2 unidades; B libera a propria reserva; C nao reserva nada.
+$expectedStock = 98
+$stockDeadline = (Get-Date).AddSeconds(20)
+do {
+    $finalProductResponse = Invoke-ApiRequest -Method 'Get' -Url "$baseUrl/api/catalog/products/$productId"
+    $finalProduct = Get-JsonProperty -InputObject $finalProductResponse.Data -Name 'product'
+    $finalStock = Get-JsonProperty -InputObject $finalProduct -Name 'stock'
+    $finalReserved = Get-JsonProperty -InputObject $finalProduct -Name 'reserved'
+    $stockSettled = $finalProductResponse.Success -and [int]$finalStock -eq $expectedStock -and [int]$finalReserved -eq 0
+    if (-not $stockSettled) {
+        Start-Sleep -Seconds 1
+    }
+} while (-not $stockSettled -and (Get-Date) -lt $stockDeadline)
+Write-Check -Name 'estoque final do produto' `
+    -Success $stockSettled `
+    -Expected "stock=$expectedStock, reserved=0" `
+    -Actual "HTTP $($finalProductResponse.StatusCode), stock=$finalStock, reserved=$finalReserved"
+
+Write-Host 'Etapa final: conferindo notificacoes do usuario...'
+# Esperado: 3 pedidos recebidos, 1 confirmado, 1 pagamento recusado e 1 cancelado por estoque.
+$expectedTypes = @('ORDER_RECEIVED', 'ORDER_CONFIRMED', 'PAYMENT_REJECTED', 'ORDER_CANCELLED')
+$notificationsDeadline = (Get-Date).AddSeconds(20)
+do {
+    $notificationsResponse = Invoke-ApiRequest `
+        -Method 'Get' `
+        -Url "$baseUrl/api/notifications/notifications/me?limit=50" `
+        -Token $script:token
+    $notificationItems = @(Get-JsonProperty -InputObject $notificationsResponse.Data -Name 'items')
+    $receivedTypes = @($notificationItems | ForEach-Object { Get-JsonProperty -InputObject $_ -Name 'type' } | Sort-Object -Unique)
+    $missingTypes = @($expectedTypes | Where-Object { $receivedTypes -notcontains $_ })
+    $notificationsReady = $notificationsResponse.Success -and $missingTypes.Count -eq 0 -and $notificationItems.Count -ge 6
+    if (-not $notificationsReady) {
+        Start-Sleep -Seconds 1
+    }
+} while (-not $notificationsReady -and (Get-Date) -lt $notificationsDeadline)
+Write-Check -Name 'notificacoes do usuario' `
+    -Success $notificationsReady `
+    -Expected "6 notificacoes com tipos $($expectedTypes -join ', ')" `
+    -Actual "HTTP $($notificationsResponse.StatusCode), $($notificationItems.Count) notificacoes, tipos: $($receivedTypes -join ', ')"
 
 Write-Host ''
 Write-Host "Resumo do smoke test: $script:passed PASS, $script:failed FAIL."

@@ -1,3 +1,24 @@
+# Infraestrutura local do ShopMesh.
+#
+#   docker compose up -d                  -> somente a infraestrutura
+#                                           (Postgres, Mongo, Kafka, Kafka UI)
+#   docker compose --profile apps up -d   -> infraestrutura + todos os serviços
+#   docker compose --profile observability up -d -> Prometheus, Grafana e Jaeger
+#
+# As variáveis (JWT_SECRET, portas etc.) vêm de infra/.env; veja .env.example.
+
+x-node-healthcheck: &node-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 20s
+
+x-java-healthcheck: &java-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 18
+  start_period: 40s
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,7 +29,7 @@ services:
       POSTGRES_PASSWORD: shopmesh
       POSTGRES_DB: auth_db
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
@@ -26,9 +47,14 @@ services:
       MONGO_INITDB_ROOT_USERNAME: shopmesh
       MONGO_INITDB_ROOT_PASSWORD: shopmesh
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   kafka:
     image: apache/kafka:4.1.1
@@ -71,7 +97,245 @@ services:
       kafka:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # Observabilidade (profile "observability")
+  # ---------------------------------------------------------------------------
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.5.0
+    container_name: shopmesh-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    # Permite raspar serviços rodando direto no host (fora do Docker).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/jaeger:2.10.0
+    container_name: shopmesh-jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:12.1.1
+    container_name: shopmesh-grafana
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment:
+      # Acesso anônimo como Admin: conveniente para estudo local, nunca em produção.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/shopmesh-overview.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - jaeger
+
+  # ---------------------------------------------------------------------------
+  # Serviços da aplicação (profile "apps")
+  # ---------------------------------------------------------------------------
+
+  auth-service:
+    profiles: ["apps"]
+    build: ../services/auth-service
+    container_name: shopmesh-auth-service
+    restart: unless-stopped
+    command: ["sh", "-c", "npx prisma migrate deploy && npm start"]
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: auth-service
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 3001
+      DATABASE_URL: postgresql://shopmesh:shopmesh@postgres:5432/auth_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET em infra/.env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      <<: *node-healthcheck
+
+  catalog-service:
+    profiles: ["apps"]
+    build: ../services/catalog-service
+    container_name: shopmesh-catalog-service
+    restart: unless-stopped
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: catalog-service
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 3002
+      MONGO_URI: mongodb://shopmesh:shopmesh@mongo:27017/catalog_db?authSource=admin
+      KAFKA_BROKERS: kafka:29092
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET em infra/.env}
+    ports:
+      - "3002:3002"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      <<: *node-healthcheck
+
+  orders-service:
+    profiles: ["apps"]
+    build: ../services/orders-service
+    container_name: shopmesh-orders-service
+    restart: unless-stopped
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: orders-service
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 8081
+      DATABASE_URL: jdbc:postgresql://postgres:5432/orders_db
+      DATABASE_USER: shopmesh
+      DATABASE_PASSWORD: shopmesh
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET em infra/.env}
+      CATALOG_SERVICE_URL: http://catalog-service:3002
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      <<: *java-healthcheck
+
+  payments-service:
+    profiles: ["apps"]
+    build: ../services/payments-service
+    container_name: shopmesh-payments-service
+    restart: unless-stopped
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: payments-service
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 8083
+      DATABASE_URL: jdbc:postgresql://postgres:5432/payments_db
+      DATABASE_USER: shopmesh
+      DATABASE_PASSWORD: shopmesh
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET em infra/.env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      PAYMENT_APPROVAL_LIMIT: ${PAYMENT_APPROVAL_LIMIT:-5000}
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/health || exit 1"]
+      <<: *java-healthcheck
+
+  notifications-service:
+    profiles: ["apps"]
+    build: ../services/notifications-service
+    container_name: shopmesh-notifications-service
+    restart: unless-stopped
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: notifications-service
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 3003
+      KAFKA_BROKERS: kafka:29092
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET em infra/.env}
+    ports:
+      - "3003:3003"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      <<: *node-healthcheck
+
+  gateway:
+    profiles: ["apps"]
+    build: ../gateway
+    container_name: shopmesh-gateway
+    restart: unless-stopped
+    environment:
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      OTEL_SERVICE_NAME: api-gateway
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      PORT: 3000
+      AUTH_SERVICE_URL: http://auth-service:3001
+      CATALOG_SERVICE_URL: http://catalog-service:3002
+      ORDERS_SERVICE_URL: http://orders-service:8081
+      PAYMENTS_SERVICE_URL: http://payments-service:8083
+      NOTIFICATIONS_SERVICE_URL: http://notifications-service:3003
+    ports:
+      - "3000:3000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      orders-service:
+        condition: service_healthy
+      payments-service:
+        condition: service_healthy
+      notifications-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      <<: *node-healthcheck
+
+  storefront:
+    profiles: ["apps"]
+    build: ../apps/storefront
+    container_name: shopmesh-storefront
+    restart: unless-stopped
+    environment:
+      SHOPMESH_API_URL: http://localhost:3000
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway
+
+  admin:
+    profiles: ["apps"]
+    build: ../apps/admin
+    container_name: shopmesh-admin
+    restart: unless-stopped
+    environment:
+      SHOPMESH_API_URL: http://localhost:3000
+    ports:
+      - "4200:80"
+    depends_on:
+      - gateway
+
 volumes:
   postgres_data:
   mongo_data:
   kafka_data:
+  prometheus_data:
+  grafana_data:

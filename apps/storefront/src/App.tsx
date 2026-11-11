@@ -1,9 +1,14 @@
 import { ArrowUpRight, Leaf } from 'lucide-react';
 import { Link, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
+import RequireAuth from './components/RequireAuth';
+import CartPage from './pages/CartPage';
 import LoginPage from './pages/LoginPage';
+import OrderDetailPage from './pages/OrderDetailPage';
+import OrdersPage from './pages/OrdersPage';
 import ProductDetailPage from './pages/ProductDetailPage';
 import ProductListPage from './pages/ProductListPage';
+import RegisterPage from './pages/RegisterPage';
 
 function NotFoundPage() {
   return (
@@ -26,6 +31,10 @@ export default function App() {
           <Route path="/" element={<ProductListPage />} />
           <Route path="/products/:id" element={<ProductDetailPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
+          <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

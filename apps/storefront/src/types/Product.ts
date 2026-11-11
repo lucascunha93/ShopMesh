@@ -5,6 +5,8 @@ export interface Product {
   price: number;
   category: string;
   stock: number;
+  reserved?: number;
+  availableStock?: number;
   imageUrl?: string;
   active: boolean;
   createdAt?: string;

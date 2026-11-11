@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../config/prisma');
 const asyncHandler = require('../utils/asyncHandler');
 const createToken = require('../utils/createToken');
-const { registerSchema, loginSchema } = require('../utils/validationSchemas');
+const { registerSchema, loginSchema, listUsersSchema } = require('../utils/validationSchemas');
 
 const publicUserFields = {
   id: true,
@@ -90,4 +90,31 @@ const getMe = asyncHandler(async (req, res) => {
   res.json({ user });
 });
 
-module.exports = { register, login, getMe };
+const listUsers = asyncHandler(async (req, res) => {
+  const result = listUsersSchema.safeParse(req.query);
+
+  if (!result.success) {
+    const error = new Error('Dados inválidos');
+    error.status = 400;
+    error.details = result.error.issues;
+    throw error;
+  }
+
+  const { page, limit } = result.data;
+  const [total, items] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.findMany({
+      select: publicUserFields,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+  ]);
+
+  res.json({
+    items,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+});
+
+module.exports = { register, login, getMe, listUsers };

@@ -1,0 +1,42 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shopmesh
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shopmesh
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - infra/postgres.yaml
+  - infra/mongo.yaml
+  - infra/kafka.yaml
+  - apps/auth-service.yaml
+  - apps/catalog-service.yaml
+  - apps/orders-service.yaml
+  - apps/payments-service.yaml
+  - apps/notifications-service.yaml
+  - apps/gateway.yaml
+  - apps/storefront.yaml
+  - apps/admin.yaml
+  - ingress.yaml
+
+configMapGenerator:
+  - name: shopmesh-config
+    literals:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - PAYMENT_APPROVAL_LIMIT=5000
+      - JWT_EXPIRES_IN=1h
+      # Ligue junto com k8s/observability (Jaeger).
+      - TRACING_ENABLED=false
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
+  - name: postgres-init
+    files:
+      - infra/init-databases.sql
+
+secretGenerator:
+  - name: shopmesh-secrets
+    envs:
+      - secrets.env

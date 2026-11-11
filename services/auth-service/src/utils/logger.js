@@ -35,4 +35,14 @@ function safeErrorMessage(error) {
     : undefined;
 }
 
-module.exports = { logHttpFailures, logRequestError };
+function logStartupError(error) {
+  console.error(JSON.stringify({
+    level: 'error',
+    message: 'Auth Service failed to start',
+    errorName: error.name || 'Error',
+    errorCode: typeof error.code === 'string' ? error.code : undefined,
+    errorMessage: safeErrorMessage(error),
+  }));
+}
+
+module.exports = { logHttpFailures, logRequestError, logStartupError };

@@ -14,29 +14,31 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Component
-public class OrderCreatedListener {
-    private static final String ORDER_CREATED_TOPIC = "order.created";
+public class StockReservedListener {
+    public static final String STOCK_RESERVED_TOPIC = "stock.reserved";
+    public static final String PAYMENT_APPROVED_TOPIC = "payment.approved";
+    public static final String PAYMENT_REJECTED_TOPIC = "payment.rejected";
 
     private final ObjectMapper objectMapper;
     private final PaymentProcessor paymentProcessor;
     private final KafkaTemplate<String, String> kafkaTemplate;
 
-    public OrderCreatedListener(ObjectMapper objectMapper,
-                                PaymentProcessor paymentProcessor,
-                                KafkaTemplate<String, String> kafkaTemplate) {
+    public StockReservedListener(ObjectMapper objectMapper,
+                                 PaymentProcessor paymentProcessor,
+                                 KafkaTemplate<String, String> kafkaTemplate) {
         this.objectMapper = objectMapper;
         this.paymentProcessor = paymentProcessor;
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    @KafkaListener(topics = ORDER_CREATED_TOPIC, groupId = "payments-service")
+    @KafkaListener(topics = STOCK_RESERVED_TOPIC, groupId = "payments-service")
     public void handle(String payload) throws Exception {
-        OrderCreatedEvent orderEvent = objectMapper.readValue(payload, OrderCreatedEvent.class);
-        Payment payment = paymentProcessor.process(orderEvent);
+        StockReservedEvent stockEvent = objectMapper.readValue(payload, StockReservedEvent.class).validate();
+        Payment payment = paymentProcessor.process(stockEvent);
         String resultPayload = serializeResult(payment);
         String topic = payment.getStatus() == PaymentStatus.APPROVED
-                ? "payment.approved"
-                : "payment.rejected";
+                ? PAYMENT_APPROVED_TOPIC
+                : PAYMENT_REJECTED_TOPIC;
 
         kafkaTemplate.send(topic, payment.getOrderId().toString(), resultPayload)
                 .get(10, TimeUnit.SECONDS);

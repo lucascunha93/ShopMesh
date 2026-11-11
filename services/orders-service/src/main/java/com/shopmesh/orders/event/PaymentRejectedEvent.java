@@ -17,4 +17,13 @@ public record PaymentRejectedEvent(
         BigDecimal amount,
         String reason
 ) {
+    public static final String EVENT_TYPE = "PAYMENT_REJECTED";
+
+    public PaymentRejectedEvent validate() {
+        if (eventId == null || occurredAt == null || orderId == null || paymentId == null
+                || userId == null || amount == null || !EVENT_TYPE.equals(eventType)) {
+            throw new InvalidEventException("Evento PAYMENT_REJECTED sem campos obrigatórios");
+        }
+        return this;
+    }
 }

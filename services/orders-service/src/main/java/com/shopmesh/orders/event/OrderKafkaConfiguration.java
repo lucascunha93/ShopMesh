@@ -13,23 +13,33 @@ public class OrderKafkaConfiguration {
     }
 
     @Bean
+    public NewTopic stockRejectedTopic() {
+        return topic(StockEventListener.STOCK_REJECTED_TOPIC);
+    }
+
+    @Bean
     public NewTopic paymentApprovedTopic() {
-        return topic("payment.approved");
+        return topic(PaymentEventListener.PAYMENT_APPROVED_TOPIC);
     }
 
     @Bean
     public NewTopic paymentRejectedTopic() {
-        return topic("payment.rejected");
+        return topic(PaymentEventListener.PAYMENT_REJECTED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic stockRejectedDeadLetterTopic() {
+        return topic(StockEventListener.STOCK_REJECTED_TOPIC + ".DLT");
     }
 
     @Bean
     public NewTopic paymentApprovedDeadLetterTopic() {
-        return topic("payment.approved.DLT");
+        return topic(PaymentEventListener.PAYMENT_APPROVED_TOPIC + ".DLT");
     }
 
     @Bean
     public NewTopic paymentRejectedDeadLetterTopic() {
-        return topic("payment.rejected.DLT");
+        return topic(PaymentEventListener.PAYMENT_REJECTED_TOPIC + ".DLT");
     }
 
     private NewTopic topic(String name) {

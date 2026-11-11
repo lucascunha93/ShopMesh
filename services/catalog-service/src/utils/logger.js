@@ -45,4 +45,33 @@ function safeErrorMessage(error) {
     : undefined;
 }
 
-module.exports = { logHttpFailures, logRequestError, logStartupError };
+function log(level, message, fields = {}) {
+  const output = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  output(JSON.stringify({ level, message, service: 'catalog-service', ...fields }));
+}
+
+function logInfo(message, fields) {
+  log('info', message, fields);
+}
+
+function logWarn(message, fields) {
+  log('warn', message, fields);
+}
+
+function logError(message, error, fields = {}) {
+  log('error', message, {
+    ...fields,
+    errorName: error ? error.name || 'Error' : undefined,
+    errorMessage: error ? safeErrorMessage(error) : undefined,
+  });
+}
+
+module.exports = {
+  logHttpFailures,
+  logRequestError,
+  logStartupError,
+  logInfo,
+  logWarn,
+  logError,
+  safeErrorMessage,
+};

@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  labels:
+    app.kubernetes.io/name: catalog-service
+spec:
+  selector:
+    app.kubernetes.io/name: catalog-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  labels:
+    app.kubernetes.io/name: catalog-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3002"
+        prometheus.io/path: /metrics
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      containers:
+        - name: catalog-service
+          image: shopmesh/catalog-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3002
+          envFrom:
+            - configMapRef:
+                name: shopmesh-config
+          env:
+            - name: PORT
+              value: "3002"
+            - name: OTEL_SERVICE_NAME
+              value: catalog-service
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: shopmesh-secrets, key: MONGO_PASSWORD }
+            - name: MONGO_URI
+              value: mongodb://shopmesh:$(MONGO_PASSWORD)@mongo:27017/catalog_db?authSource=admin
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: shopmesh-secrets, key: JWT_SECRET }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }

@@ -1,0 +1,37 @@
+# Cada serviço tem dois alvos: o nome do container (profile "apps") e
+# host.docker.internal (serviço rodando direto no host, como nos READMEs).
+# É esperado que um deles apareça como DOWN, conforme o modo de execução.
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: api-gateway
+    static_configs:
+      - targets: ["gateway:3000", "host.docker.internal:3000"]
+
+  - job_name: auth-service
+    static_configs:
+      - targets: ["auth-service:3001", "host.docker.internal:3001"]
+
+  - job_name: catalog-service
+    static_configs:
+      - targets: ["catalog-service:3002", "host.docker.internal:3002"]
+
+  - job_name: notifications-service
+    static_configs:
+      - targets: ["notifications-service:3003", "host.docker.internal:3003"]
+
+  - job_name: orders-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["orders-service:8081", "host.docker.internal:8081"]
+
+  - job_name: payments-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["payments-service:8083", "host.docker.internal:8083"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

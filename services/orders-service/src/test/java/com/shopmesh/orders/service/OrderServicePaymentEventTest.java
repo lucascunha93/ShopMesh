@@ -5,6 +5,7 @@ import com.shopmesh.orders.entity.Order;
 import com.shopmesh.orders.entity.OrderStatus;
 import com.shopmesh.orders.event.PaymentApprovedEvent;
 import com.shopmesh.orders.event.PaymentRejectedEvent;
+import com.shopmesh.orders.event.StockRejectedEvent;
 import com.shopmesh.orders.repository.OrderRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -94,6 +95,51 @@ class OrderServicePaymentEventTest {
         orderService.handlePaymentRejected(paymentRejectedEvent(orderId, "Pagamento rejeitado"));
 
         verify(orderRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any(Order.class));
+    }
+
+    @Test
+    void stockRejectedCancelsPendingOrderAndStoresReason() {
+        Order order = pendingOrder();
+        String reason = "Estoque insuficiente para Teclado Mecanico (solicitado: 20, disponível: 15)";
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        orderService.handleStockRejected(stockRejectedEvent(order.getId(), reason));
+
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        assertEquals(reason, order.getStatusReason());
+        verify(orderRepository).saveAndFlush(order);
+    }
+
+    @Test
+    void stockRejectedForCancelledOrderIsIgnored() {
+        Order order = pendingOrder();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setStatusReason("motivo original");
+        when(orderRepository.findById(order.getId())).thenReturn(Optional.of(order));
+
+        orderService.handleStockRejected(stockRejectedEvent(order.getId(), "outro motivo"));
+
+        assertEquals("motivo original", order.getStatusReason());
+        verify(orderRepository, never()).saveAndFlush(order);
+    }
+
+    @Test
+    void invalidStockRejectedEventIsDetected() {
+        StockRejectedEvent event = new StockRejectedEvent(UUID.randomUUID(), "STOCK_REJECTED",
+                Instant.parse("2026-10-07T03:20:06.021Z"), null, UUID.randomUUID(), "x");
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.shopmesh.orders.event.InvalidEventException.class, event::validate);
+    }
+
+    private StockRejectedEvent stockRejectedEvent(UUID orderId, String reason) {
+        return new StockRejectedEvent(
+                UUID.randomUUID(),
+                "STOCK_REJECTED",
+                Instant.parse("2026-10-07T03:20:06.021Z"),
+                orderId,
+                UUID.randomUUID(),
+                reason
+        );
     }
 
     private Order pendingOrder() {

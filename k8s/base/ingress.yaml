@@ -1,0 +1,37 @@
+# Requer um Ingress Controller NGINX (minikube addons enable ingress, ou o
+# ingress-nginx no Kind) e entradas no arquivo hosts apontando para o cluster:
+#   <ip-do-cluster> shopmesh.local admin.shopmesh.local api.shopmesh.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shopmesh
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shopmesh.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: storefront
+                port: { name: http }
+    - host: admin.shopmesh.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin
+                port: { name: http }
+    - host: api.shopmesh.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port: { name: http }

@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class PaymentEventListener {
-    private static final String PAYMENT_APPROVED_TOPIC = "payment.approved";
-    private static final String PAYMENT_REJECTED_TOPIC = "payment.rejected";
+    public static final String PAYMENT_APPROVED_TOPIC = "payment.approved";
+    public static final String PAYMENT_REJECTED_TOPIC = "payment.rejected";
 
     private final ObjectMapper objectMapper;
     private final OrderService orderService;
@@ -21,11 +21,13 @@ public class PaymentEventListener {
 
     @KafkaListener(topics = PAYMENT_APPROVED_TOPIC, groupId = "orders-service")
     public void handlePaymentApproved(String payload) throws JsonProcessingException {
-        orderService.handlePaymentApproved(objectMapper.readValue(payload, PaymentApprovedEvent.class));
+        orderService.handlePaymentApproved(
+                objectMapper.readValue(payload, PaymentApprovedEvent.class).validate());
     }
 
     @KafkaListener(topics = PAYMENT_REJECTED_TOPIC, groupId = "orders-service")
     public void handlePaymentRejected(String payload) throws JsonProcessingException {
-        orderService.handlePaymentRejected(objectMapper.readValue(payload, PaymentRejectedEvent.class));
+        orderService.handlePaymentRejected(
+                objectMapper.readValue(payload, PaymentRejectedEvent.class).validate());
     }
 }

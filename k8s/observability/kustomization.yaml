@@ -1,0 +1,24 @@
+# Prometheus, Grafana e Jaeger. Use pelo overlay k8s/overlays/observability,
+# que também liga o tracing nos serviços.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - prometheus.yaml
+  - jaeger.yaml
+  - grafana.yaml
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml
+  - name: grafana-provisioning-datasources
+    files:
+      - grafana/datasources.yml
+  - name: grafana-provisioning-dashboards
+    files:
+      - grafana/dashboards.yml
+  # Cópia de infra/observability/grafana/dashboards; mantenha as duas iguais.
+  - name: grafana-dashboards
+    files:
+      - grafana/shopmesh-overview.json

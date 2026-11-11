@@ -47,3 +47,9 @@ logs/
 /register*.json
 /order*.json
 /product.json
+
+# Segredos do Kubernetes (use k8s/base/secrets.env.example como modelo)
+/k8s/base/secrets.env
+
+# Angular
+.angular/

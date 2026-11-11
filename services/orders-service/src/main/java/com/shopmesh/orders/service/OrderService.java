@@ -12,6 +12,7 @@ import com.shopmesh.orders.event.OrderCreatedDomainEvent;
 import com.shopmesh.orders.event.OrderCreatedEvent;
 import com.shopmesh.orders.event.PaymentApprovedEvent;
 import com.shopmesh.orders.event.PaymentRejectedEvent;
+import com.shopmesh.orders.event.StockRejectedEvent;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.exception.InvalidOrderStatusTransitionException;
 import com.shopmesh.orders.exception.OrderNotFoundException;
@@ -75,6 +76,14 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
+    public Page<OrderResponse> listAll(OrderStatus status, Pageable pageable) {
+        Page<Order> orders = status == null
+                ? orderRepository.findAll(pageable)
+                : orderRepository.findByStatus(status, pageable);
+        return orders.map(OrderResponse::from);
+    }
+
+    @Transactional(readOnly = true)
     public OrderResponse getById(UUID orderId, AuthContext authContext) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException(orderId));
@@ -123,6 +132,22 @@ public class OrderService {
             order.setStatusReason(event.reason());
             orderRepository.saveAndFlush(order);
         }, () -> LOGGER.warn("Evento payment.rejected ignorado: pedido {} não encontrado", event.orderId()));
+    }
+
+    @Transactional
+    public void handleStockRejected(StockRejectedEvent event) {
+        orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
+            if (order.getStatus() != OrderStatus.PENDING) {
+                logIgnoredPaymentEvent(order);
+                return;
+            }
+
+            order.setStatus(OrderStatus.CANCELLED);
+            order.setStatusReason(event.reason() == null || event.reason().isBlank()
+                    ? "Estoque indisponível"
+                    : event.reason());
+            orderRepository.saveAndFlush(order);
+        }, () -> LOGGER.warn("Evento stock.rejected ignorado: pedido {} não encontrado", event.orderId()));
     }
 
     private void logIgnoredPaymentEvent(Order order) {

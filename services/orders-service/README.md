@@ -10,7 +10,7 @@ O `spring-dotenv` carrega automaticamente o arquivo `.env` da pasta do serviço 
 
 No arranque, o serviço exige que `JWT_SECRET` tenha pelo menos 32 caracteres (256 bits); se não tiver, encerra com uma mensagem explícita em português.
 
-O Orders Service publica `ORDER_CREATED` no tópico Kafka `order.created` somente após o commit do pedido e consome `PAYMENT_APPROVED` de `payment.approved` e `PAYMENT_REJECTED` de `payment.rejected`. Os eventos de pagamento confirmam ou cancelam pedidos ainda `PENDING`; rejeições também registram o motivo em `statusReason`. Mensagens repetidas, pedidos já processados e IDs inexistentes são ignorados; falhas de processamento passam por três tentativas com intervalo de um segundo e depois são encaminhadas para o tópico correspondente `.DLT`. Configure `KAFKA_BOOTSTRAP_SERVERS` para apontar ao broker; o padrão local é `localhost:9092`. O producer usa `orderId` como chave, habilita idempotência e aguarda confirmação de todas as réplicas (`acks=all`); o consumer usa o grupo `orders-service` e começa em `earliest`. O contrato dos eventos está em [`docs/events.md`](../../docs/events.md).
+O Orders Service publica `ORDER_CREATED` no tópico Kafka `order.created` somente após o commit do pedido e consome `STOCK_REJECTED` de `stock.rejected`, `PAYMENT_APPROVED` de `payment.approved` e `PAYMENT_REJECTED` de `payment.rejected`. Esses eventos confirmam ou cancelam pedidos ainda `PENDING`; cancelamentos registram o motivo em `statusReason` (estoque insuficiente ou pagamento recusado). Mensagens repetidas, pedidos já processados e IDs inexistentes são ignorados; falhas de processamento passam por três tentativas com intervalo de um segundo e depois são encaminhadas para o tópico correspondente `.DLT`. Mensagens com JSON malformado ou sem campos obrigatórios vão direto para a DLT, sem novas tentativas, com o cabeçalho `x-rejected-by: orders-service`. Configure `KAFKA_BOOTSTRAP_SERVERS` para apontar ao broker; o padrão local é `localhost:9092`. O producer usa `orderId` como chave, habilita idempotência e aguarda confirmação de todas as réplicas (`acks=all`); o consumer usa o grupo `orders-service` e começa em `earliest`. O contrato dos eventos está em [`docs/events.md`](../../docs/events.md).
 
 O script `infra/postgres-init/init-databases.sql` cria `orders_db` somente na primeira inicialização do volume de dados do Postgres. Se o volume já tiver sido inicializado antes da criação do banco, crie o banco manualmente ou recrie o volume conforme as instruções da raiz do projeto; essa recriação apaga também os dados locais de `auth_db`.
 
@@ -94,6 +94,15 @@ curl.exe http://localhost:8081/orders/<id-do-pedido-de-outro-usuario> `
 
 Um usuário com role `ADMIN` pode consultar pedidos de outros usuários.
 
+### Listar todos os pedidos (ADMIN)
+
+Ordenados do mais recente para o mais antigo; `status` é opcional (`PENDING`, `CONFIRMED` ou `CANCELLED`). Um `CUSTOMER` recebe `403`.
+
+```powershell
+curl.exe "http://localhost:8081/orders/all?status=PENDING&page=0&size=20" `
+  -H "Authorization: Bearer <token-admin>"
+```
+
 ### Atualizar o status (ADMIN)
 
 Somente `ADMIN` pode confirmar ou cancelar um pedido ainda `PENDING`.
@@ -106,6 +115,16 @@ curl.exe -X PATCH http://localhost:8081/orders/<id-do-pedido>/status `
 ```
 
 Também é possível enviar `"status":"CANCELLED"`. Tentar alterar novamente um pedido confirmado ou cancelado retorna `400`.
+
+> A mudança manual não publica eventos: ela não desfaz uma reserva de estoque nem uma cobrança já feitas pelos outros serviços da Saga.
+
+### Observabilidade
+
+- Métricas Prometheus em `GET /actuator/prometheus` e saúde em `GET /actuator/health`
+  (o gateway não expõe `/actuator`).
+- Tracing OpenTelemetry desligado por padrão. Com `TRACING_ENABLED=true`, os spans vão para
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (padrão `http://localhost:4318/v1/traces`, o Jaeger do
+  profile `observability`). O contexto é propagado pelos cabeçalhos das mensagens Kafka.
 
 ### Token ausente
 
