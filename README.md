@@ -159,7 +159,6 @@ ou `kubectl apply -k k8s/overlays/observability` para incluir Prometheus, Grafan
 - [x] Orders Service (Java/Spring Boot)
 - [x] Payments Service (Java/Spring Boot)
 - [x] Integração via Kafka (eventos de pedido/pagamento)
-<<<<<<< HEAD
 - [x] Saga Pattern (orquestração pedidos ↔ pagamentos ↔ estoque)
 - [x] Notifications Service (Node + Kafka)
 - [x] Admin (Angular)
@@ -173,12 +172,6 @@ ou `kubectl apply -k k8s/overlays/observability` para incluir Prometheus, Grafan
   reservas de estoque nem cobranças já feitas pelos outros serviços.
 - O Notifications Service guarda o feed em memória: ele recomeça vazio a cada reinício.
 - O preço é copiado do catálogo na criação do pedido; não há carrinho persistido no servidor.
-=======
-- [ ] Saga Pattern (orquestração pedidos ↔ pagamentos ↔ estoque)
-- [ ] Admin (Angular)
-- [ ] Observabilidade (Prometheus + Grafana + Jaeger)
-- [ ] Deploy em Kubernetes local (Minikube/Kind)
->>>>>>> a48c82f2717134caabafbee5ec73bf7502dcce9c
 
 ## Licença
 
