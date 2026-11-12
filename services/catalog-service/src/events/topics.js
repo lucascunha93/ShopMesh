@@ -1,17 +1,16 @@
 const TOPICS = Object.freeze({
   ORDER_CREATED: 'order.created',
-  ORDER_CANCELLED: 'order.cancelled',
   STOCK_RESERVED: 'stock.reserved',
   STOCK_REJECTED: 'stock.rejected',
-  PAYMENT_APPROVED: 'payment.approved',
-  PAYMENT_REJECTED: 'payment.rejected',
+  STOCK_COMMIT: 'stock.commit',
+  STOCK_RELEASE: 'stock.release',
 });
 
+// Saga orquestrada: o Catalog só reage a order.created e aos comandos do Orders.
 const CONSUMED_TOPICS = [
   TOPICS.ORDER_CREATED,
-  TOPICS.ORDER_CANCELLED,
-  TOPICS.PAYMENT_APPROVED,
-  TOPICS.PAYMENT_REJECTED,
+  TOPICS.STOCK_COMMIT,
+  TOPICS.STOCK_RELEASE,
 ];
 const PRODUCED_TOPICS = [TOPICS.STOCK_RESERVED, TOPICS.STOCK_REJECTED];
 

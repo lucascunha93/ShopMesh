@@ -150,12 +150,12 @@ function createStockService({ ProductModel = Product, ReservationModel = StockRe
     const saga = await ReservationModel.findOne({ orderId });
 
     if (!saga) {
-      logWarn('Evento de pagamento ignorado: reserva não encontrada', { orderId });
+      logWarn('Comando ignorado: reserva não encontrada', { orderId });
       return null;
     }
 
     if (!StockReservation.canTransition(saga.status, targetStatus)) {
-      logInfo('Evento de pagamento ignorado: transição não permitida', {
+      logInfo('Comando ignorado: transição não permitida', {
         orderId,
         status: saga.status,
         target: targetStatus,

@@ -2,7 +2,8 @@ package com.shopmesh.payments.service;
 
 import com.shopmesh.payments.entity.Payment;
 import com.shopmesh.payments.entity.PaymentStatus;
-import com.shopmesh.payments.event.StockReservedEvent;
+import com.shopmesh.payments.event.PaymentRefundRequestedEvent;
+import com.shopmesh.payments.event.PaymentRequestedEvent;
 import com.shopmesh.payments.repository.PaymentRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,11 +64,11 @@ class PaymentProcessorTest {
 
     @Test
     void processingSameEventTwiceCreatesOnlyOnePayment() {
-        StockReservedEvent event = event("699.80");
+        PaymentRequestedEvent event = event("699.80");
         Payment savedPayment = new Payment();
         savedPayment.setOrderId(event.orderId());
         savedPayment.setUserId(event.userId());
-        savedPayment.setAmount(event.totalAmount());
+        savedPayment.setAmount(event.amount());
         savedPayment.setStatus(PaymentStatus.APPROVED);
 
         when(paymentRepository.findByOrderId(event.orderId()))
@@ -83,11 +86,11 @@ class PaymentProcessorTest {
 
     @Test
     void loadsExistingPaymentWhenConcurrentInsertViolatesUniqueConstraint() {
-        StockReservedEvent event = event("699.80");
+        PaymentRequestedEvent event = event("699.80");
         Payment existingPayment = new Payment();
         existingPayment.setOrderId(event.orderId());
         existingPayment.setUserId(event.userId());
-        existingPayment.setAmount(event.totalAmount());
+        existingPayment.setAmount(event.amount());
         existingPayment.setStatus(PaymentStatus.APPROVED);
 
         when(paymentRepository.findByOrderId(event.orderId()))
@@ -102,7 +105,7 @@ class PaymentProcessorTest {
     }
 
     private void assertStatusForAmount(String amount, PaymentStatus expectedStatus, String expectedReason) {
-        StockReservedEvent event = event(amount);
+        PaymentRequestedEvent event = event(amount);
         when(paymentRepository.findByOrderId(event.orderId())).thenReturn(Optional.empty());
         when(paymentWriter.saveAndFlush(any(Payment.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0, Payment.class));
@@ -117,15 +120,84 @@ class PaymentProcessorTest {
         assertEquals(expectedStatus, paymentCaptor.getValue().getStatus());
     }
 
-    private StockReservedEvent event(String amount) {
-        return new StockReservedEvent(
+    private PaymentRequestedEvent event(String amount) {
+        return new PaymentRequestedEvent(
                 UUID.randomUUID(),
-                "STOCK_RESERVED",
+                "PAYMENT_REQUESTED",
                 Instant.parse("2026-10-07T03:20:06.021Z"),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
-                new BigDecimal(amount),
-                java.util.List.of(new StockReservedEvent.Item("product-123", 2))
+                new BigDecimal(amount)
+        );
+    }
+
+    @Test
+    void refundsApprovedPaymentAndStoresReason() {
+        Payment payment = payment(PaymentStatus.APPROVED);
+        PaymentRefundRequestedEvent event = refundEvent(payment, "Pedido cancelado");
+        when(paymentRepository.findByOrderId(payment.getOrderId())).thenReturn(Optional.of(payment));
+        when(paymentRepository.saveAndFlush(payment)).thenReturn(payment);
+
+        Optional<Payment> result = paymentProcessor.refund(event);
+
+        assertTrue(result.isPresent());
+        assertEquals(PaymentStatus.REFUNDED, result.get().getStatus());
+        assertEquals("Pedido cancelado", result.get().getRefundReason());
+        verify(paymentRepository).saveAndFlush(payment);
+    }
+
+    @Test
+    void refundingAlreadyRefundedPaymentReturnsItWithoutChanges() {
+        Payment payment = payment(PaymentStatus.REFUNDED);
+        payment.setRefundReason("Primeiro motivo");
+        when(paymentRepository.findByOrderId(payment.getOrderId())).thenReturn(Optional.of(payment));
+
+        Optional<Payment> result = paymentProcessor.refund(refundEvent(payment, "Outro motivo"));
+
+        assertSame(payment, result.orElseThrow());
+        assertEquals("Primeiro motivo", payment.getRefundReason());
+        verify(paymentRepository, never()).saveAndFlush(any(Payment.class));
+    }
+
+    @Test
+    void refundIgnoresRejectedPayment() {
+        Payment payment = payment(PaymentStatus.REJECTED);
+        when(paymentRepository.findByOrderId(payment.getOrderId())).thenReturn(Optional.of(payment));
+
+        Optional<Payment> result = paymentProcessor.refund(refundEvent(payment, null));
+
+        assertTrue(result.isEmpty());
+        assertEquals(PaymentStatus.REJECTED, payment.getStatus());
+        verify(paymentRepository, never()).saveAndFlush(any(Payment.class));
+    }
+
+    @Test
+    void refundIgnoresUnknownOrder() {
+        Payment payment = payment(PaymentStatus.APPROVED);
+        when(paymentRepository.findByOrderId(payment.getOrderId())).thenReturn(Optional.empty());
+
+        assertTrue(paymentProcessor.refund(refundEvent(payment, null)).isEmpty());
+        verify(paymentRepository, never()).saveAndFlush(any(Payment.class));
+    }
+
+    private Payment payment(PaymentStatus status) {
+        Payment payment = new Payment();
+        payment.setId(UUID.randomUUID());
+        payment.setOrderId(UUID.randomUUID());
+        payment.setUserId(UUID.randomUUID());
+        payment.setAmount(new BigDecimal("699.80"));
+        payment.setStatus(status);
+        return payment;
+    }
+
+    private PaymentRefundRequestedEvent refundEvent(Payment payment, String reason) {
+        return new PaymentRefundRequestedEvent(
+                UUID.randomUUID(),
+                "PAYMENT_REFUND_REQUESTED",
+                Instant.parse("2026-10-07T03:20:06.021Z"),
+                payment.getOrderId(),
+                payment.getUserId(),
+                reason
         );
     }
 }

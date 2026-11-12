@@ -65,6 +65,9 @@ spec:
               value: "1"
             - name: KAFKA_MIN_INSYNC_REPLICAS
               value: "1"
+            # Só os serviços criam tópicos (NewTopic/admin), sempre com 3 partições.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false"
             - name: KAFKA_LOG_DIRS
               value: /var/lib/kafka/data
           readinessProbe:

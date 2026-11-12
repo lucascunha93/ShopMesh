@@ -14,6 +14,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -27,7 +29,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class StockReservedListenerTest {
+class PaymentRefundRequestedListenerTest {
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -38,73 +40,96 @@ class StockReservedListenerTest {
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
     private final PaymentProcessor paymentProcessor = mock(PaymentProcessor.class);
-    private final StockReservedListener listener =
-            new StockReservedListener(objectMapper, paymentProcessor, kafkaTemplate);
+    private final PaymentRefundRequestedListener listener =
+            new PaymentRefundRequestedListener(objectMapper, paymentProcessor, kafkaTemplate);
 
     @SuppressWarnings("unchecked")
     @Test
-    void approvedPaymentIsPublishedWithOrderIdAsKey() throws Exception {
-        Payment payment = payment(PaymentStatus.APPROVED, null);
-        when(paymentProcessor.process(any(StockReservedEvent.class))).thenReturn(payment);
+    void refundedPaymentIsPublishedWithOrderIdAsKey() throws Exception {
+        when(paymentProcessor.refund(any(PaymentRefundRequestedEvent.class)))
+                .thenReturn(Optional.of(refundedPayment("Pedido cancelado")));
         when(kafkaTemplate.send(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
 
-        listener.handle(validPayload());
+        listener.handle(validPayload("\"Pedido cancelado\""));
 
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-        verify(kafkaTemplate).send(eq("payment.approved"), eq(orderId.toString()), payloadCaptor.capture());
+        verify(kafkaTemplate).send(eq("payment.refunded"), eq(orderId.toString()), payloadCaptor.capture());
         JsonNode json = objectMapper.readTree(payloadCaptor.getValue());
-        assertEquals("PAYMENT_APPROVED", json.get("eventType").asText());
+        assertEquals("PAYMENT_REFUNDED", json.get("eventType").asText());
         assertEquals(orderId.toString(), json.get("orderId").asText());
         assertEquals(userId.toString(), json.get("userId").asText());
         assertEquals(0, new BigDecimal("699.80").compareTo(json.get("amount").decimalValue()));
+        assertEquals("Pedido cancelado", json.get("reason").asText());
+        assertEquals(false, json.get("paymentId").isNull());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void resendingRefundRepeatsTheSameEvent() throws Exception {
+        Payment payment = refundedPayment(null);
+        when(paymentProcessor.refund(any(PaymentRefundRequestedEvent.class))).thenReturn(Optional.of(payment));
+        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+
+        listener.handle(validPayload("null"));
+        listener.handle(validPayload("null"));
+
+        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
+        verify(kafkaTemplate, org.mockito.Mockito.times(2))
+                .send(eq("payment.refunded"), eq(orderId.toString()), payloadCaptor.capture());
+        assertEquals(payloadCaptor.getAllValues().get(0), payloadCaptor.getAllValues().get(1));
+        assertEquals(true, objectMapper.readTree(payloadCaptor.getValue()).get("reason").isNull());
+    }
+
+    @Test
+    void nothingToRefundPublishesNothing() throws Exception {
+        when(paymentProcessor.refund(any(PaymentRefundRequestedEvent.class))).thenReturn(Optional.empty());
+
+        listener.handle(validPayload("\"Pedido cancelado\""));
+
+        verify(kafkaTemplate, never()).send(anyString(), anyString(), anyString());
     }
 
     @Test
     void malformedJsonIsRejectedWithoutProcessing() {
         assertThrows(JsonProcessingException.class, () -> listener.handle("{nao-e-json"));
-        verify(paymentProcessor, never()).process(any());
+        verify(paymentProcessor, never()).refund(any());
     }
 
     @Test
     void missingRequiredFieldIsRejectedAsInvalidEvent() {
-        String payload = validPayload().replace("\"userId\":\"" + userId + "\",", "");
+        String payload = validPayload("null").replace("\"userId\":\"" + userId + "\",", "");
         assertThrows(InvalidEventException.class, () -> listener.handle(payload));
-        verify(paymentProcessor, never()).process(any());
+        verify(paymentProcessor, never()).refund(any());
     }
 
     @Test
-    void unknownFieldsAreIgnored() throws Exception {
-        Payment payment = payment(PaymentStatus.REJECTED, "Limite de aprovação excedido");
-        when(paymentProcessor.process(any(StockReservedEvent.class))).thenReturn(payment);
-        @SuppressWarnings("unchecked")
-        SendResult<String, String> result = mock(SendResult.class);
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
-                .thenReturn(CompletableFuture.completedFuture(result));
-
-        listener.handle(validPayload().replace("{\"eventId\"", "{\"campoNovo\":true,\"eventId\""));
-
-        verify(kafkaTemplate).send(eq("payment.rejected"), eq(orderId.toString()), anyString());
+    void wrongEventTypeIsRejectedAsInvalidEvent() {
+        String payload = validPayload("null").replace("PAYMENT_REFUND_REQUESTED", "PAYMENT_REQUESTED");
+        assertThrows(InvalidEventException.class, () -> listener.handle(payload));
+        verify(paymentProcessor, never()).refund(any());
     }
 
-    private String validPayload() {
+    private String validPayload(String reasonJson) {
         return "{\"eventId\":\"" + UUID.randomUUID() + "\","
-                + "\"eventType\":\"STOCK_RESERVED\","
+                + "\"eventType\":\"PAYMENT_REFUND_REQUESTED\","
                 + "\"occurredAt\":\"2026-10-07T03:20:06.021Z\","
                 + "\"orderId\":\"" + orderId + "\","
                 + "\"userId\":\"" + userId + "\","
-                + "\"totalAmount\":699.80,"
-                + "\"items\":[{\"productId\":\"product-123\",\"quantity\":2}]}";
+                + "\"reason\":" + reasonJson + ","
+                + "\"campoNovo\":true}";
     }
 
-    private Payment payment(PaymentStatus status, String reason) {
+    private Payment refundedPayment(String refundReason) {
         Payment payment = new Payment();
         payment.setId(UUID.randomUUID());
         payment.setOrderId(orderId);
         payment.setUserId(userId);
         payment.setAmount(new BigDecimal("699.80"));
-        payment.setStatus(status);
-        payment.setReason(reason);
+        payment.setStatus(PaymentStatus.REFUNDED);
+        payment.setRefundReason(refundReason);
+        payment.setUpdatedAt(Instant.parse("2026-10-07T03:21:00Z"));
         return payment;
     }
 }

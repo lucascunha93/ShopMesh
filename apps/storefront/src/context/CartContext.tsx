@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useAuth } from './AuthContext';
+import * as cartService from '../services/cart';
 import type { Product } from '../types/Product';
 
 const STORAGE_KEY = 'shopmesh.cart';
@@ -35,12 +37,70 @@ function readStoredCart(): CartItem[] {
   }
 }
 
+// Une o carrinho do servidor com o local; em conflito, vale a quantidade local (ação mais recente).
+export function mergeCarts(server: CartItem[], local: CartItem[]): CartItem[] {
+  const merged = new Map(server.map((item) => [item.productId, item]));
+  for (const item of local) {
+    merged.set(item.productId, item);
+  }
+  return [...merged.values()];
+}
+
+const SYNC_DELAY_MS = 500;
+
 export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const { token } = useAuth();
   const [items, setItems] = useState<CartItem[]>(readStoredCart);
+  const hydratedToken = useRef<string | null>(null);
+  const previousToken = useRef<string | null>(token);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  // Ao autenticar, traz o carrinho salvo no servidor; ao sair, limpa o carrinho local
+  // (o do servidor permanece e volta no próximo login).
+  useEffect(() => {
+    const hadToken = previousToken.current !== null;
+    previousToken.current = token;
+
+    if (!token) {
+      hydratedToken.current = null;
+      if (hadToken) {
+        setItems([]);
+      }
+      return undefined;
+    }
+
+    let cancelled = false;
+    cartService.fetchCart()
+      .then((serverItems) => {
+        if (cancelled) {
+          return;
+        }
+        setItems((local) => mergeCarts(serverItems, local));
+        hydratedToken.current = token;
+      })
+      .catch(() => console.error('[cart] Não foi possível carregar o carrinho do servidor'));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // Depois da hidratação, qualquer mudança é salva no servidor (com debounce).
+  useEffect(() => {
+    if (!token || hydratedToken.current !== token) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      cartService.saveCart(items)
+        .catch(() => console.error('[cart] Não foi possível salvar o carrinho no servidor'));
+    }, SYNC_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [items, token]);
 
   const addItem = useCallback((product: Product, quantity: number) => {
     setItems((current) => {
@@ -95,3 +155,4 @@ export function useCart() {
 
   return context;
 }
+

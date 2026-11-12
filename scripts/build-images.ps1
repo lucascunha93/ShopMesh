@@ -14,7 +14,8 @@ param(
     [string]$KindCluster = 'kind'
 )
 
-$ErrorActionPreference = 'Stop'
+# Os comandos nativos escrevem progresso em stderr; o sucesso é verificado por $LASTEXITCODE.
+$ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 
 # Nome da imagem -> pasta com o Dockerfile.

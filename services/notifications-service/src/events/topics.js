@@ -1,9 +1,10 @@
 const TOPICS = Object.freeze({
   ORDER_CREATED: 'order.created',
   ORDER_CANCELLED: 'order.cancelled',
+  ORDER_CONFIRMED: 'order.confirmed',
   STOCK_REJECTED: 'stock.rejected',
-  PAYMENT_APPROVED: 'payment.approved',
   PAYMENT_REJECTED: 'payment.rejected',
+  PAYMENT_REFUNDED: 'payment.refunded',
 });
 
 const CONSUMED_TOPICS = Object.values(TOPICS);

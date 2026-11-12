@@ -1,20 +1,31 @@
-# Contrato de eventos — Versão 2
+# Contrato de eventos — Versão 3 (Saga orquestrada)
 
 Este documento é a fonte de verdade para a comunicação assíncrona entre os
 serviços. Cada serviço implementa sua própria representação do evento; o
 contrato compartilhado é o JSON, não classes Java ou JavaScript compartilhadas.
 
+A Saga é **orquestrada pelo `orders-service`**: ele decide o próximo passo a cada
+resposta e envia *comandos* (`payment.requested`, `stock.commit`, `stock.release`,
+`payment.refund.requested`) aos participantes. Catalog e Payments não reagem mais
+aos eventos um do outro; só respondem ao Orders.
+
 ## Tópicos
 
-| Tópico | Produtor | Consumidor |
-| --- | --- | --- |
-| `order.created` | `orders-service` | `catalog-service`, `notifications-service` |
-| `order.cancelled` | `orders-service` | `catalog-service`, `notifications-service` |
-| `stock.reserved` | `catalog-service` | `payments-service` |
-| `stock.rejected` | `catalog-service` | `orders-service`, `notifications-service` |
-| `payment.approved` | `payments-service` | `orders-service`, `catalog-service`, `notifications-service` |
-| `payment.rejected` | `payments-service` | `orders-service`, `catalog-service`, `notifications-service` |
-| `<tópico>.DLT` | Serviço que rejeita a mensagem | Operação/diagnóstico do serviço responsável |
+| Tópico | Tipo | Produtor | Consumidor |
+| --- | --- | --- | --- |
+| `order.created` | comando (reservar estoque) | `orders-service` | `catalog-service`, `notifications-service` |
+| `stock.reserved` | resposta | `catalog-service` | `orders-service` |
+| `stock.rejected` | resposta | `catalog-service` | `orders-service`, `notifications-service` |
+| `payment.requested` | comando (cobrar) | `orders-service` | `payments-service` |
+| `payment.approved` | resposta | `payments-service` | `orders-service` |
+| `payment.rejected` | resposta | `payments-service` | `orders-service`, `notifications-service` |
+| `stock.commit` | comando (efetivar reserva) | `orders-service` | `catalog-service` |
+| `stock.release` | comando (liberar reserva) | `orders-service` | `catalog-service` |
+| `payment.refund.requested` | comando (estornar) | `orders-service` | `payments-service` |
+| `payment.refunded` | resposta | `payments-service` | `notifications-service` |
+| `order.cancelled` | evento informativo | `orders-service` | `notifications-service` |
+| `order.confirmed` | evento informativo | `orders-service` | `notifications-service` |
+| `<tópico>.DLT` | dead letter | Serviço que rejeita a mensagem | Operação/diagnóstico do serviço responsável |
 
 Mensagens que falharem após as tentativas de processamento configuradas vão para
 `<tópico>.DLT` (dead letter topic), por exemplo `stock.reserved.DLT`. Mensagens
@@ -56,37 +67,34 @@ mesmo pedido sejam lidos em ordem na mesma partição.
   são retentados e seguem diretamente para `<tópico>.DLT`, com cabeçalho que
   identifica o serviço que os rejeitou.
 
-## Semântica da Saga de estoque
+## Semântica da Saga (orquestrada)
 
 ```text
-orders-service
-    |
-    | ORDER_CREATED
-    v
-catalog-service -- estoque reservado --> STOCK_RESERVED --> payments-service
-    |                                                        |
-    | estoque insuficiente                                 | pagamento aprovado
-    v                                                        v
-STOCK_REJECTED --> orders-service                    PAYMENT_APPROVED
-                       |                              /             \
-                       | cancela pedido              v               v
-                       |                    orders-service   catalog-service
-                       |                    confirma pedido  efetiva reserva
-                       |
-                       |                         PAYMENT_REJECTED
-                       |                         /             \
-                       |                        v               v
-                       |               orders-service   catalog-service
-                       |               cancela pedido   libera reserva
-                       v
-                 pedido finalizado
+                         ┌──────────── orders-service (orquestrador) ────────────┐
+ POST /orders            │                                                       │
+      │  PENDING         │                                                       │
+      └─ order.created ──┼──► catalog: reserva estoque                           │
+                         │       ├─ stock.reserved ──► Orders ── payment.requested ──► payments: cobra
+                         │       └─ stock.rejected ──► Orders cancela                │
+                         │                                                       │
+                         │   payment.approved ──► Orders confirma ── stock.commit ──► catalog efetiva
+                         │   payment.rejected ──► Orders cancela  ── stock.release ─► catalog libera
+                         │                                                       │
+                         │   cancelamento manual ─ stock.release + order.cancelled
+                         │   payment.approved tardio (pedido já cancelado) ──►
+                         │        payment.refund.requested ──► payments estorna ──► payment.refunded
+                         └───────────────────────────────────────────────────────┘
 ```
 
-| Passo | Ação | Sucesso | Falha | Compensação |
+O Orders guarda o passo atual da Saga em cada pedido (`sagaStep`: `STOCK_RESERVATION`,
+`PAYMENT`, `DONE`) e só avança o pedido `PENDING`; respostas repetidas ou fora de
+ordem são ignoradas ou respondidas com a compensação adequada.
+
+| Passo | Comando | Sucesso | Falha | Compensação |
 | --- | --- | --- | --- | --- |
-| 1. Reservar estoque (`catalog-service`) | Verifica disponibilidade e reserva as unidades solicitadas. | Publica `STOCK_RESERVED` em `stock.reserved`. | Publica `STOCK_REJECTED` em `stock.rejected`; o `orders-service` cancela o pedido. | Nada a desfazer: nenhuma reserva foi criada. |
-| 2. Cobrar (`payments-service`) | Processa o pagamento após receber `STOCK_RESERVED`. | Publica `PAYMENT_APPROVED` em `payment.approved`. | Publica `PAYMENT_REJECTED` em `payment.rejected`; o `orders-service` cancela o pedido. | O `catalog-service` libera a reserva. |
-| 3. Confirmar (`orders-service`) | Confirma o pedido ao receber `PAYMENT_APPROVED`. | O `catalog-service` efetiva a reserva ao receber o mesmo `PAYMENT_APPROVED`. | — | — |
+| 1. Reservar estoque (`catalog-service`) | `order.created` | Responde `STOCK_RESERVED`; o Orders passa ao passo 2. | Responde `STOCK_REJECTED`; o Orders cancela o pedido. | Nada a desfazer: nenhuma reserva foi criada. |
+| 2. Cobrar (`payments-service`) | `payment.requested` | Responde `PAYMENT_APPROVED`; o Orders confirma o pedido e envia `stock.commit`. | Responde `PAYMENT_REJECTED`; o Orders cancela o pedido e envia `stock.release`. | `stock.release` libera a reserva. |
+| 3. Cancelamento manual pelo Admin | — | Orders cancela, envia `stock.release` e publica `order.cancelled`. | — | Se um `PAYMENT_APPROVED` chegar depois, o Orders envia `payment.refund.requested` e `stock.release`. |
 
 Reservar não é descontar estoque: **reservar** segura unidades para o pedido sem
 baixar o estoque físico. **Efetivar** baixa o estoque físico de vez e remove a
@@ -129,9 +137,8 @@ reservar o estoque solicitado. O evento mantém o formato da versão 1.
 ## `STOCK_RESERVED` — tópico `stock.reserved`
 
 Produzido pelo `catalog-service` depois de reservar estoque e consumido pelo
-`payments-service`. `userId` e `totalAmount` são repassados sem alteração do
-`ORDER_CREATED`; o Catalog não é dono desses dados e os inclui para que Payments
-não precise obtê-los de outra fonte.
+`orders-service`, que então envia `payment.requested`. O formato da versão 2 foi
+mantido (`userId`, `totalAmount` e `items` repassados do `ORDER_CREATED`).
 
 ```json
 {
@@ -168,9 +175,10 @@ consumido pelo `orders-service`, que cancela o pedido.
 
 ## `PAYMENT_APPROVED` — tópico `payment.approved`
 
-Produzido pelo `payments-service` e consumido pelo `orders-service` e pelo
-`catalog-service`. Orders confirma o pedido; Catalog efetiva a reserva. O evento
-mantém o formato da versão 1.
+Produzido pelo `payments-service` e consumido pelo `orders-service` (confirma o
+pedido e envia `stock.commit`). O `notifications-service` não o consome: o cliente
+é avisado por `order.confirmed`, publicado pelo Orders só quando o pedido de fato
+é confirmado. O evento mantém o formato da versão 1.
 
 ```json
 {
@@ -186,8 +194,8 @@ mantém o formato da versão 1.
 
 ## `PAYMENT_REJECTED` — tópico `payment.rejected`
 
-Produzido pelo `payments-service` e consumido pelo `orders-service` e pelo
-`catalog-service`. Orders cancela o pedido; Catalog libera a reserva. O evento
+Produzido pelo `payments-service` e consumido pelo `orders-service` (cancela o
+pedido e envia `stock.release`) e pelo `notifications-service`. O evento
 mantém o formato da versão 1.
 
 ```json
@@ -205,15 +213,9 @@ mantém o formato da versão 1.
 
 ## `ORDER_CANCELLED` — tópico `order.cancelled`
 
-Produzido pelo `orders-service` somente quando um administrador cancela
-manualmente um pedido `PENDING` (cancelamentos da própria Saga já são
-propagados por `stock.rejected` e `payment.rejected`). O `catalog-service`
-libera a reserva de estoque, se existir; o `notifications-service` avisa o
-cliente. `reason` pode ser `null`.
-
-Se o pagamento ainda estiver em andamento, um `payment.approved` tardio é
-ignorado pelo Orders (pedido já cancelado) e pelo Catalog (reserva já liberada);
-o estorno da cobrança não é automatizado.
+Evento informativo produzido pelo `orders-service` somente quando um administrador
+cancela manualmente um pedido `PENDING`; consumido pelo `notifications-service`.
+A liberação do estoque vai por `stock.release`. `reason` pode ser `null`.
 
 ```json
 {
@@ -223,6 +225,108 @@ o estorno da cobrança não é automatizado.
   "orderId": "uuid",
   "userId": "uuid",
   "reason": null
+}
+```
+
+## `ORDER_CONFIRMED` — tópico `order.confirmed`
+
+Evento informativo produzido pelo `orders-service` sempre que um pedido passa a
+`CONFIRMED` (por `payment.approved` ou por confirmação manual no Admin);
+consumido pelo `notifications-service`.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "ORDER_CONFIRMED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid",
+  "totalAmount": 699.80
+}
+```
+
+## `PAYMENT_REQUESTED` — tópico `payment.requested`
+
+Comando do `orders-service` para o `payments-service` cobrar o pedido, enviado ao
+receber `STOCK_RESERVED`. O Payments é idempotente por `orderId`.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "PAYMENT_REQUESTED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid",
+  "amount": 699.80
+}
+```
+
+## `STOCK_COMMIT_REQUESTED` — tópico `stock.commit`
+
+Comando do `orders-service` para o `catalog-service` efetivar a reserva
+(`RESERVED` → `COMMITTED`), enviado quando o pedido é confirmado.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "STOCK_COMMIT_REQUESTED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid"
+}
+```
+
+## `STOCK_RELEASE_REQUESTED` — tópico `stock.release`
+
+Comando do `orders-service` para o `catalog-service` liberar a reserva
+(`RESERVED` → `RELEASED`), enviado quando o pedido é cancelado (pagamento
+recusado, cancelamento manual ou `payment.approved` tardio). Se a reserva ainda
+não existir, o Orders reenvia o comando ao receber `STOCK_RESERVED` de um pedido
+já cancelado.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "STOCK_RELEASE_REQUESTED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid",
+  "reason": "texto opcional ou null"
+}
+```
+
+## `PAYMENT_REFUND_REQUESTED` — tópico `payment.refund.requested`
+
+Comando do `orders-service` para o `payments-service` estornar uma cobrança
+aprovada de um pedido que já estava cancelado. O Payments só estorna pagamentos
+`APPROVED`; os demais casos são ignorados.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "PAYMENT_REFUND_REQUESTED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "userId": "uuid",
+  "reason": "Pedido cancelado antes da confirmação do pagamento"
+}
+```
+
+## `PAYMENT_REFUNDED` — tópico `payment.refunded`
+
+Resposta do `payments-service` depois de estornar; consumido pelo
+`notifications-service`.
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "PAYMENT_REFUNDED",
+  "occurredAt": "2026-10-07T03:20:06.021Z",
+  "orderId": "uuid",
+  "paymentId": "uuid",
+  "userId": "uuid",
+  "amount": 699.80,
+  "reason": "texto opcional ou null"
 }
 ```
 
@@ -238,4 +342,10 @@ o estorno da cobrança não é automatizado.
   consumir `order.created`, `stock.rejected`, `payment.approved` e
   `payment.rejected`; os cabeçalhos das DLTs foram documentados.
 - **v2.2:** adiciona `order.cancelled` (cancelamento manual de pedido `PENDING`
-  pelo Admin), consumido por Catalog e Notifications.
+  pelo Admin), consumido por Notifications.
+- **v3 — Saga orquestrada:** o `orders-service` vira orquestrador. Novos
+  comandos `payment.requested`, `stock.commit`, `stock.release` e
+  `payment.refund.requested`, e nova resposta `payment.refunded`. Payments deixa
+  de consumir `stock.reserved` (consumido só pelo Orders) e Catalog deixa de
+  consumir `payment.*`. O `order.confirmed` (novo) substitui `payment.approved`
+  como gatilho da notificação de confirmação.

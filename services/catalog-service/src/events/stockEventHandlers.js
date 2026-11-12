@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { TOPICS } = require('./topics');
-const { orderCreatedSchema, orderCancelledSchema, paymentApprovedSchema, paymentRejectedSchema } = require('./schemas');
+const { orderCreatedSchema, stockCommitSchema, stockReleaseSchema } = require('./schemas');
 const { SAGA_STATUS } = require('../models/StockReservation');
 const { logInfo } = require('../utils/logger');
 
@@ -55,16 +55,12 @@ function createStockEventHandlers({ stockService, producer }) {
       schema: orderCreatedSchema,
       handle: handleOrderCreated,
     },
-    [TOPICS.ORDER_CANCELLED]: {
-      schema: orderCancelledSchema,
-      handle: (event) => stockService.releaseForOrder(event),
-    },
-    [TOPICS.PAYMENT_APPROVED]: {
-      schema: paymentApprovedSchema,
+    [TOPICS.STOCK_COMMIT]: {
+      schema: stockCommitSchema,
       handle: (event) => stockService.commitForOrder(event),
     },
-    [TOPICS.PAYMENT_REJECTED]: {
-      schema: paymentRejectedSchema,
+    [TOPICS.STOCK_RELEASE]: {
+      schema: stockReleaseSchema,
       handle: (event) => stockService.releaseForOrder(event),
     },
   };

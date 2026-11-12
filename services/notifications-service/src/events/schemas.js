@@ -25,11 +25,10 @@ const stockRejectedSchema = z.object({
   reason: z.string().optional(),
 });
 
-const paymentApprovedSchema = z.object({
+const orderConfirmedSchema = z.object({
   ...baseEvent,
-  eventType: z.literal('PAYMENT_APPROVED'),
-  paymentId: z.string().uuid(),
-  amount: z.number(),
+  eventType: z.literal('ORDER_CONFIRMED'),
+  totalAmount: z.number(),
 });
 
 const paymentRejectedSchema = z.object({
@@ -40,10 +39,19 @@ const paymentRejectedSchema = z.object({
   reason: z.string().optional(),
 });
 
+const paymentRefundedSchema = z.object({
+  ...baseEvent,
+  eventType: z.literal('PAYMENT_REFUNDED'),
+  paymentId: z.string().uuid(),
+  amount: z.number(),
+  reason: z.string().nullish(),
+});
+
 module.exports = {
   orderCreatedSchema,
   orderCancelledSchema,
   stockRejectedSchema,
-  paymentApprovedSchema,
+  orderConfirmedSchema,
   paymentRejectedSchema,
+  paymentRefundedSchema,
 };

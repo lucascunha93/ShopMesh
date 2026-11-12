@@ -1,13 +1,17 @@
+const { createMongoNotificationStore } = require('./mongoNotificationStore');
+const { logWarn } = require('../utils/logger');
+
 /**
- * Armazenamento em memória das notificações mais recentes. O serviço não tem
- * banco: ao reiniciar, o feed recomeça a partir do que o Kafka reentregar.
+ * Armazenamento em memória das notificações mais recentes, usado nos testes e
+ * quando MONGO_URI não está definido: ao reiniciar, o feed é perdido.
  * A deduplicação por eventId torna o consumo idempotente (at-least-once).
+ * A interface é assíncrona para ser intercambiável com a implementação MongoDB.
  */
-function createNotificationStore({ maxSize = 500 } = {}) {
+function createMemoryNotificationStore({ maxSize = 500 } = {}) {
   const notifications = [];
   const eventIds = new Set();
 
-  function add(notification) {
+  async function add(notification) {
     if (eventIds.has(notification.eventId)) {
       return false;
     }
@@ -22,14 +26,30 @@ function createNotificationStore({ maxSize = 500 } = {}) {
     return true;
   }
 
-  function list({ userId, limit = 50 } = {}) {
+  async function list({ userId, limit = 50 } = {}) {
     const filtered = userId
       ? notifications.filter((notification) => notification.userId === userId)
       : notifications;
     return filtered.slice(0, limit);
   }
 
-  return { add, list, size: () => notifications.length };
+  return {
+    type: 'memory',
+    connect: async () => {},
+    disconnect: async () => {},
+    add,
+    list,
+  };
 }
 
-module.exports = { createNotificationStore };
+// Escolhe o store conforme a configuração: MongoDB quando há MONGO_URI.
+function createNotificationStore({ mongoUri, maxSize } = {}) {
+  if (mongoUri) {
+    return createMongoNotificationStore({ mongoUri });
+  }
+
+  logWarn('MONGO_URI não definido: notificações em memória, serão perdidas ao reiniciar');
+  return createMemoryNotificationStore({ maxSize });
+}
+
+module.exports = { createNotificationStore, createMemoryNotificationStore };

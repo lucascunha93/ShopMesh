@@ -425,6 +425,40 @@ Write-Check -Name 'notificacoes do usuario' `
     -Expected "6 notificacoes com tipos $($expectedTypes -join ', ')" `
     -Actual "HTTP $($notificationsResponse.StatusCode), $($notificationItems.Count) notificacoes, tipos: $($receivedTypes -join ', ')"
 
+Write-Host 'Carrinho no servidor: salvando, lendo e limpando...'
+$cartUrl = "$baseUrl/api/orders/cart"
+$cartItems = @(@{
+        productId = $productId
+        name      = 'Produto do smoke test'
+        price     = 349.90
+        category  = 'smoke-test'
+        quantity  = 3
+    })
+$cartSave = Invoke-ApiRequest -Method 'Put' -Url $cartUrl -Body @{ items = $cartItems } -Token $script:token
+Write-Check -Name 'carrinho: salvar' -Success $cartSave.Success -Expected 'HTTP 2xx' -Actual "HTTP $($cartSave.StatusCode)"
+
+$cartRead = Invoke-ApiRequest -Method 'Get' -Url $cartUrl -Token $script:token
+$savedItems = @(Get-JsonProperty -InputObject $cartRead.Data -Name 'items')
+$savedQuantity = if ($savedItems.Count -gt 0) { [int](Get-JsonProperty -InputObject $savedItems[0] -Name 'quantity') } else { 0 }
+Write-Check -Name 'carrinho: ler' `
+    -Success ($cartRead.Success -and $savedItems.Count -eq 1 -and $savedQuantity -eq 3) `
+    -Expected '1 item com quantidade 3' `
+    -Actual "HTTP $($cartRead.StatusCode), $($savedItems.Count) item(ns), quantidade $savedQuantity"
+
+$cartAnonymous = Invoke-ApiRequest -Method 'Get' -Url $cartUrl
+Write-Check -Name 'carrinho: exige autenticacao' `
+    -Success ($cartAnonymous.StatusCode -eq 401) `
+    -Expected 'HTTP 401' `
+    -Actual "HTTP $($cartAnonymous.StatusCode)"
+
+$cartDelete = Invoke-ApiRequest -Method 'Delete' -Url $cartUrl -Token $script:token
+$cartAfter = Invoke-ApiRequest -Method 'Get' -Url $cartUrl -Token $script:token
+$remainingItems = @(Get-JsonProperty -InputObject $cartAfter.Data -Name 'items')
+Write-Check -Name 'carrinho: limpar' `
+    -Success ($cartDelete.Success -and $cartAfter.Success -and $remainingItems.Count -eq 0) `
+    -Expected 'carrinho vazio' `
+    -Actual "HTTP $($cartAfter.StatusCode), $($remainingItems.Count) item(ns)"
+
 Write-Host ''
 Write-Host "Resumo do smoke test: $script:passed PASS, $script:failed FAIL."
 if ($script:failed -gt 0) {

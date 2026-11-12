@@ -32,14 +32,15 @@ e as métricas Prometheus em `GET /metrics`. Testes: `npm test`.
 
 ## Saga de estoque
 
-O consumidor do grupo `catalog-service` lê `order.created`, `payment.approved` e
-`payment.rejected` (contrato em [`docs/events.md`](../../docs/events.md)):
+A Saga é orquestrada pelo Orders Service. O consumidor do grupo `catalog-service` lê
+`order.created`, `stock.commit` e `stock.release` (contrato em
+[`docs/events.md`](../../docs/events.md)); não consome mais `payment.*` nem `order.cancelled`:
 
-| Evento recebido | Ação | Publica |
+| Mensagem recebida | Ação | Publica |
 |---|---|---|
 | `ORDER_CREATED` | Reserva as unidades de todos os itens | `STOCK_RESERVED` ou `STOCK_REJECTED` |
-| `PAYMENT_APPROVED` | **Efetiva**: baixa o estoque físico e remove a reserva | — |
-| `PAYMENT_REJECTED` | **Libera**: remove a reserva sem baixar o estoque | — |
+| `STOCK_COMMIT_REQUESTED` (comando) | **Efetiva**: baixa o estoque físico e remove a reserva | — |
+| `STOCK_RELEASE_REQUESTED` (comando) | **Libera**: remove a reserva sem baixar o estoque | — |
 
 - Cada produto guarda `stock` (físico), `reserved` (soma das reservas) e a lista interna de
   reservas por pedido. A API também devolve `availableStock = stock - reserved`.

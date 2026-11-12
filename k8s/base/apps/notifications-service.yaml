@@ -19,7 +19,7 @@ metadata:
   labels:
     app.kubernetes.io/name: notifications-service
 spec:
-  # Uma réplica: o feed fica em memória e não é compartilhado entre pods.
+  # O feed fica no MongoDB, então o serviço pode escalar horizontalmente.
   replicas: 1
   selector:
     matchLabels:
@@ -50,6 +50,11 @@ spec:
               value: "3003"
             - name: OTEL_SERVICE_NAME
               value: notifications-service
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: shopmesh-secrets, key: MONGO_PASSWORD }
+            - name: MONGO_URI
+              value: mongodb://shopmesh:$(MONGO_PASSWORD)@mongo:27017/shopmesh_notifications?authSource=admin
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef: { name: shopmesh-secrets, key: JWT_SECRET }

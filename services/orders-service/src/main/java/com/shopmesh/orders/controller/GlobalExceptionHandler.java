@@ -3,6 +3,7 @@ package com.shopmesh.orders.controller;
 import com.shopmesh.orders.dto.ApiError;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.exception.CatalogServiceUnavailableException;
+import com.shopmesh.orders.exception.InvalidCartException;
 import com.shopmesh.orders.exception.InvalidOrderStatusTransitionException;
 import com.shopmesh.orders.exception.OrderNotFoundException;
 import com.shopmesh.orders.exception.ProductNotFoundException;
@@ -42,6 +43,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidOrderStatusTransitionException.class)
     public ResponseEntity<ApiError> handleInvalidStatus(InvalidOrderStatusTransitionException exception) {
+        return response(HttpStatus.BAD_REQUEST, exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCartException.class)
+    public ResponseEntity<ApiError> handleInvalidCart(InvalidCartException exception) {
         return response(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 

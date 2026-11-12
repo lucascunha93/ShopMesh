@@ -45,6 +45,9 @@ public class Payment {
     @Column
     private String reason;
 
+    @Column
+    private String refundReason;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

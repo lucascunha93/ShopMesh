@@ -18,6 +18,41 @@ public class OrderKafkaConfiguration {
     }
 
     @Bean
+    public NewTopic orderConfirmedTopic() {
+        return topic(SagaMessage.ORDER_CONFIRMED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic paymentRequestedTopic() {
+        return topic(SagaMessage.PAYMENT_REQUESTED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic stockCommitTopic() {
+        return topic(SagaMessage.STOCK_COMMIT_TOPIC);
+    }
+
+    @Bean
+    public NewTopic stockReleaseTopic() {
+        return topic(SagaMessage.STOCK_RELEASE_TOPIC);
+    }
+
+    @Bean
+    public NewTopic paymentRefundRequestedTopic() {
+        return topic(SagaMessage.PAYMENT_REFUND_REQUESTED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic stockReservedTopic() {
+        return topic(StockEventListener.STOCK_RESERVED_TOPIC);
+    }
+
+    @Bean
+    public NewTopic stockReservedDeadLetterTopic() {
+        return topic(StockEventListener.STOCK_RESERVED_TOPIC + ".DLT");
+    }
+
+    @Bean
     public NewTopic stockRejectedTopic() {
         return topic(StockEventListener.STOCK_REJECTED_TOPIC);
     }

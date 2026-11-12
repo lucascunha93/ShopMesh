@@ -2,6 +2,7 @@ const express = require('express');
 const { httpMetricsMiddleware, metricsHandler } = require('./observability/metrics');
 const { z } = require('zod');
 const { authenticateToken, requireAdmin } = require('./middleware/authenticateToken');
+const asyncHandler = require('./utils/asyncHandler');
 const { logError, logHttpFailures } = require('./utils/logger');
 
 const listQuerySchema = z.object({
@@ -20,7 +21,7 @@ function createApp({ store }) {
   });
 
   app.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'notifications-service' });
+    res.json({ status: 'ok', service: 'notifications-service', store: store.type });
   });
 
   function parseLimit(req, res) {
@@ -33,22 +34,22 @@ function createApp({ store }) {
   }
 
   // Notificações do usuário autenticado.
-  app.get('/notifications/me', authenticateToken, (req, res) => {
+  app.get('/notifications/me', authenticateToken, asyncHandler(async (req, res) => {
     const limit = parseLimit(req, res);
     if (limit === null) {
       return undefined;
     }
-    return res.json({ items: store.list({ userId: req.auth.userId, limit }) });
-  });
+    return res.json({ items: await store.list({ userId: req.auth.userId, limit }) });
+  }));
 
   // Visão operacional de todas as notificações (ADMIN).
-  app.get('/notifications', authenticateToken, requireAdmin, (req, res) => {
+  app.get('/notifications', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
     const limit = parseLimit(req, res);
     if (limit === null) {
       return undefined;
     }
-    return res.json({ items: store.list({ limit }) });
-  });
+    return res.json({ items: await store.list({ limit }) });
+  }));
 
   app.use((req, res) => {
     res.status(404).json({ message: 'Rota não encontrada' });

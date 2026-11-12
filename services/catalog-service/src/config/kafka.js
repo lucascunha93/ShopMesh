@@ -3,7 +3,7 @@ const { CONSUMED_TOPICS, DECLARED_TOPICS } = require('../events/topics');
 const { createMessageProcessor } = require('../events/messageProcessor');
 const { createStockEventHandlers } = require('../events/stockEventHandlers');
 const { createStockService } = require('../services/stockService');
-const { logInfo } = require('../utils/logger');
+const { logInfo, logWarn } = require('../utils/logger');
 
 const KAFKA_LOG_LEVELS = {
   [logLevel.ERROR]: 'error',
@@ -40,7 +40,7 @@ function createKafka() {
   });
 }
 
-async function startEventProcessing() {
+async function startEventProcessingOnce() {
   const kafka = createKafka();
   const admin = kafka.admin();
   await admin.connect();
@@ -73,6 +73,25 @@ async function startEventProcessing() {
     await consumer.disconnect();
     await producer.disconnect();
   };
+}
+
+// Vários serviços criam tópicos ao mesmo tempo no arranque; o broker pode responder
+// "não hospeda a partição" até a criação propagar, então tentamos algumas vezes.
+async function startEventProcessing({ attempts = 6, delayMs = 3000 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await startEventProcessingOnce();
+    } catch (error) {
+      if (attempt >= attempts) {
+        throw error;
+      }
+      logWarn('Falha ao iniciar o processamento de eventos; tentando novamente', {
+        attempt,
+        errorMessage: error.message,
+      });
+      await new Promise((resolve) => { setTimeout(resolve, delayMs); });
+    }
+  }
 }
 
 module.exports = { startEventProcessing };

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class StockEventListener {
+    public static final String STOCK_RESERVED_TOPIC = "stock.reserved";
     public static final String STOCK_REJECTED_TOPIC = "stock.rejected";
 
     private final ObjectMapper objectMapper;
@@ -16,6 +17,12 @@ public class StockEventListener {
     public StockEventListener(ObjectMapper objectMapper, OrderService orderService) {
         this.objectMapper = objectMapper;
         this.orderService = orderService;
+    }
+
+    @KafkaListener(topics = STOCK_RESERVED_TOPIC, groupId = "orders-service")
+    public void handleStockReserved(String payload) throws JsonProcessingException {
+        orderService.handleStockReserved(
+                objectMapper.readValue(payload, StockReservedEvent.class).validate());
     }
 
     @KafkaListener(topics = STOCK_REJECTED_TOPIC, groupId = "orders-service")

@@ -20,7 +20,7 @@ Antes, inicie a infraestrutura com `docker compose -f infra/docker-compose.yml u
 - `/products/:id`: detalhes do produto.
 - `/login`: autenticação; o token é mantido no contexto e no `localStorage`. Redireciona de volta à página que pediu login.
 - `/register`: cadastro de cliente.
-- `/cart`: sacola (persistida no `localStorage`) e finalização do pedido.
+- `/cart`: sacola e finalização do pedido. Fica no `localStorage` e, com o usuário logado, é sincronizada com o Orders (`GET/PUT /api/orders/cart`): ao entrar, o carrinho do servidor é mesclado com o local; ao sair, o local é limpo e o do servidor volta no próximo login.
 - `/orders`: pedidos do usuário e feed de notificações (requer login).
 - `/orders/:id`: acompanhamento da Saga em tempo real (estoque, pagamento, confirmação), atualizado por polling enquanto o pedido está `PENDING`.
 

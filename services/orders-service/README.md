@@ -10,7 +10,7 @@ O `spring-dotenv` carrega automaticamente o arquivo `.env` da pasta do serviço 
 
 No arranque, o serviço exige que `JWT_SECRET` tenha pelo menos 32 caracteres (256 bits); se não tiver, encerra com uma mensagem explícita em português.
 
-O Orders Service publica `ORDER_CREATED` no tópico Kafka `order.created` somente após o commit do pedido e consome `STOCK_REJECTED` de `stock.rejected`, `PAYMENT_APPROVED` de `payment.approved` e `PAYMENT_REJECTED` de `payment.rejected`. Esses eventos confirmam ou cancelam pedidos ainda `PENDING`; cancelamentos registram o motivo em `statusReason` (estoque insuficiente ou pagamento recusado). Mensagens repetidas, pedidos já processados e IDs inexistentes são ignorados; falhas de processamento passam por três tentativas com intervalo de um segundo e depois são encaminhadas para o tópico correspondente `.DLT`. Mensagens com JSON malformado ou sem campos obrigatórios vão direto para a DLT, sem novas tentativas, com o cabeçalho `x-rejected-by: orders-service`. Configure `KAFKA_BOOTSTRAP_SERVERS` para apontar ao broker; o padrão local é `localhost:9092`. O producer usa `orderId` como chave, habilita idempotência e aguarda confirmação de todas as réplicas (`acks=all`); o consumer usa o grupo `orders-service` e começa em `earliest`. O contrato dos eventos está em [`docs/events.md`](../../docs/events.md).
+O Orders Service é o **orquestrador da Saga**. Ele publica `ORDER_CREATED` em `order.created` somente após o commit do pedido (passo `sagaStep` = `STOCK_RESERVATION`) e reage aos eventos: `STOCK_RESERVED` (`stock.reserved`) avança para o passo `PAYMENT` e publica o comando `PAYMENT_REQUESTED` (`payment.requested`, com `userId` e `amount`); `PAYMENT_APPROVED` confirma o pedido e publica `STOCK_COMMIT_REQUESTED` (`stock.commit`) e o evento informativo `ORDER_CONFIRMED` (`order.confirmed`, também publicado na confirmação manual pelo Admin; consumido pelo notifications-service); `PAYMENT_REJECTED` e `STOCK_REJECTED` cancelam o pedido (o primeiro também publica `STOCK_RELEASE_REQUESTED` em `stock.release`). Se um pedido cancelado manualmente receber `PAYMENT_APPROVED` tardio, o Orders publica `PAYMENT_REFUND_REQUESTED` (`payment.refund.requested`) e `stock.release`. Todos os comandos saem após o commit da transação, com `orderId` como chave. Cancelamentos registram o motivo em `statusReason`. Mensagens repetidas, pedidos já processados e IDs inexistentes são ignorados; falhas de processamento passam por três tentativas com intervalo de um segundo e depois são encaminhadas para o tópico correspondente `.DLT`. Mensagens com JSON malformado ou sem campos obrigatórios vão direto para a DLT, sem novas tentativas, com o cabeçalho `x-rejected-by: orders-service`. Configure `KAFKA_BOOTSTRAP_SERVERS` para apontar ao broker; o padrão local é `localhost:9092`. O producer usa `orderId` como chave, habilita idempotência e aguarda confirmação de todas as réplicas (`acks=all`); o consumer usa o grupo `orders-service` e começa em `earliest`. O contrato dos eventos está em [`docs/events.md`](../../docs/events.md).
 
 O script `infra/postgres-init/init-databases.sql` cria `orders_db` somente na primeira inicialização do volume de dados do Postgres. Se o volume já tiver sido inicializado antes da criação do banco, crie o banco manualmente ou recrie o volume conforme as instruções da raiz do projeto; essa recriação apaga também os dados locais de `auth_db`.
 
@@ -116,7 +116,24 @@ curl.exe -X PATCH http://localhost:8081/orders/<id-do-pedido>/status `
 
 Também é possível enviar `"status":"CANCELLED"`. Tentar alterar novamente um pedido confirmado ou cancelado retorna `400`.
 
-> A mudança manual não publica eventos: ela não desfaz uma reserva de estoque nem uma cobrança já feitas pelos outros serviços da Saga.
+> A mudança manual participa da Saga: o cancelamento publica `order.cancelled` e `stock.release`; a confirmação, se o pagamento já estiver em andamento (passo `PAYMENT`), publica `stock.commit`. Se o pagamento for aprovado depois do cancelamento, o estorno é solicitado automaticamente.
+
+### Carrinho (JWT obrigatório; sempre do usuário do token)
+
+```powershell
+curl.exe http://localhost:8081/cart -H "Authorization: ******"
+curl.exe -X PUT http://localhost:8081/cart `
+  -H "Authorization: ******" `
+  -H "Content-Type: application/json" `
+  -d '{"items":[{"productId":"<id>","name":"Teclado","price":199.9,"category":"perifericos","imageUrl":"http://exemplo/img.png","quantity":2}]}'
+curl.exe -X DELETE http://localhost:8081/cart -H "Authorization: ******"
+```
+
+`GET /cart` retorna `{"items":[...],"updatedAt":...}` (vazio se não existir); `PUT /cart` substitui o carrinho inteiro (máx. 100 itens, `productId`/`name`/`category` não vazios, `price >= 0`, `quantity` de 1 a 999, sem `productId` repetido; caso contrário `400`); `DELETE /cart` responde `204`. Criar um pedido não limpa o carrinho: o frontend faz isso.
+
+## Testes
+
+`.\mvnw.cmd --batch-mode test` roda os testes unitários e o `OrderSagaIntegrationTest`, que usa Testcontainers (Kafka e PostgreSQL reais) e é ignorado se não houver Docker. O pom sobrescreve `testcontainers.version` para 1.21.4 por compatibilidade com o Docker Engine 29.
 
 ### Observabilidade
 

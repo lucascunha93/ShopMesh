@@ -14,7 +14,11 @@ async function startServer() {
     throw new Error('JWT_SECRET deve estar definido');
   }
 
-  const store = createNotificationStore({ maxSize: Number(process.env.NOTIFICATIONS_MAX) || 500 });
+  const store = createNotificationStore({
+    mongoUri: process.env.MONGO_URI,
+    maxSize: Number(process.env.NOTIFICATIONS_MAX) || 500,
+  });
+  await store.connect();
   const stopEventProcessing = await startEventProcessing({ store });
   const server = createApp({ store }).listen(port, () => {
     console.log(`Notifications Service rodando na porta ${port}`);
@@ -31,6 +35,11 @@ async function startServer() {
         await stopEventProcessing();
       } catch (error) {
         logError('Falha ao encerrar o Kafka', error);
+      }
+      try {
+        await store.disconnect();
+      } catch (error) {
+        logError('Falha ao encerrar a conexão com o banco', error);
       }
       process.exit(0);
     });

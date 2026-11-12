@@ -34,9 +34,9 @@ schema com `ddl-auto: update`, como no Orders Service.
 
 ## Fluxo de pagamento e idempotência
 
-O consumidor do grupo `payments-service` lê mensagens `stock.reserved` desde o
-início do tópico: a cobrança só acontece depois que o Catalog Service reservou o estoque
-(Saga v2). Campos desconhecidos no JSON são ignorados. O
+O consumidor do grupo `payments-service` lê mensagens `payment.requested` desde o
+início do tópico: a cobrança é solicitada pelo Orders Service, que orquestra a Saga
+(`amount` é o valor a cobrar). Campos desconhecidos no JSON são ignorados. O
 `PaymentProcessor` decide e grava a cobrança em uma transação: valores até
 `PAYMENT_APPROVAL_LIMIT` (inclusive) são aprovados; valores acima são
 rejeitados com um motivo legível.
@@ -47,13 +47,20 @@ pagamento já gravado e publica novamente o resultado. Assim, uma falha ao
 publicar o resultado não cria outra cobrança. A publicação síncrona espera até
 10 segundos e sua falha aciona novas tentativas Kafka.
 
-Depois de três tentativas, mensagens de `stock.reserved` que ainda falharem são
-enviadas para `stock.reserved.DLT` (Dead Letter Topic), para inspeção e
+Depois de três tentativas, mensagens de `payment.requested` e `payment.refund.requested` que ainda falharem são
+enviadas para `payment.requested.DLT` e `payment.refund.requested.DLT` (Dead Letter Topic), para inspeção e
 reprocessamento operacional. Mensagens com JSON malformado ou sem campos obrigatórios
 não são retentadas e vão direto para a DLT. Toda mensagem na DLT recebe os cabeçalhos
-`x-rejected-by: payments-service` e `x-error-type`. Os tópicos `payment.approved` e
-`payment.rejected` têm três partições cada; seus tópicos DLT também são
+`x-rejected-by: payments-service` e `x-error-type`. Os tópicos `payment.approved`,
+`payment.rejected` e `payment.refunded` têm três partições cada; seus tópicos DLT também são
 declarados.
+
+### Estorno
+
+O evento `payment.refund.requested` (enviado pelo Orders Service) estorna o pagamento
+`APPROVED` do pedido: o status passa a `REFUNDED`, o motivo é guardado em `refundReason` e
+`payment.refunded` é publicado. Um pedido já estornado apenas republica o mesmo evento
+(idempotente). Pedido sem pagamento ou com pagamento rejeitado é ignorado (apenas log).
 
 O contrato JSON dos eventos está em [`../../docs/events.md`](../../docs/events.md).
 
@@ -79,8 +86,8 @@ curl.exe http://localhost:8083/payments/order/<order-id> `
 ```
 
 Não existe endpoint para criar pagamentos: eles são criados somente pelo
-consumo de eventos `stock.reserved`. Pedidos rejeitados por falta de estoque nunca
-geram pagamento (a consulta retorna `404`).
+consumo de eventos `payment.requested`. Pedidos sem pagamento solicitado
+(a consulta retorna `404`) ainda não foram cobrados.
 
 ## Observabilidade
 

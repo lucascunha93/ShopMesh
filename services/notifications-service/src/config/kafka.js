@@ -52,7 +52,7 @@ async function startEventProcessing({ store }) {
 
   const consumer = kafka.consumer({ groupId: SERVICE_NAME });
   await consumer.connect();
-  // Sem banco, não há histórico a reconstruir: o feed começa com mensagens novas.
+  // O consumidor começa pelas mensagens novas; reentregas são deduplicadas por eventId no store.
   await consumer.subscribe({ topics: CONSUMED_TOPICS, fromBeginning: false });
   await consumer.run({ eachMessage: processMessage });
 

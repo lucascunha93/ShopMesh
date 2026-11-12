@@ -29,28 +29,35 @@ E-commerce de estudo construído em **arquitetura de microserviços poliglota**,
         │ (Node)  │ │ (Node)  │  │ (Java)   │  │ (Java)   │ │ (Node)   │
         └────┬────┘ └────┬────┘  └────┬─────┘  └────┬─────┘ └────┬─────┘
              │           │            │             │            │
-         Postgres     MongoDB     Postgres      Postgres     (sem banco)
+         Postgres     MongoDB     Postgres      Postgres      MongoDB
                          │              │             │            ▲
                          └──────────► Kafka ◄─────────┴────────────┘
 ```
 
-### Saga de um pedido
+### Saga de um pedido (orquestrada pelo Orders)
+
+O Orders é o **orquestrador**: a cada resposta ele decide o próximo passo e envia
+*comandos* para Catalog e Payments, que só respondem a ele.
 
 ```text
 Storefront ──POST /orders──► Orders (PENDING) ──order.created──► Catalog reserva estoque
-                                                                   │
-                     stock.rejected ◄── estoque insuficiente ──────┤
-                     (Orders cancela)                              │ stock.reserved
-                                                                   ▼
-                                                   Payments cobra (limite configurável)
-                                                     │                        │
-                                         payment.approved             payment.rejected
-                                         Orders confirma              Orders cancela
-                                         Catalog efetiva estoque      Catalog libera reserva
+                                  ▲                                  │
+                                  ├──── stock.rejected ◄─────────────┤ (sem estoque: Orders cancela)
+                                  └──── stock.reserved ◄─────────────┘
+                                  │
+                                  ├── payment.requested ──► Payments cobra (limite configurável)
+                                  │                            │
+                                  ├◄─ payment.approved ────────┤  Orders confirma ── stock.commit ──► Catalog efetiva
+                                  └◄─ payment.rejected ────────┘  Orders cancela  ── stock.release ─► Catalog libera
+
+Cancelamento manual no Admin: Orders cancela, envia stock.release e publica order.cancelled.
+Se um payment.approved chegar depois, Orders envia payment.refund.requested e Payments estorna.
 ```
 
-Notifications observa todos esses eventos (e `order.cancelled`, do cancelamento manual pelo Admin) e avisa o cliente. O contrato completo
-(tópicos, formatos, DLT e transições de estado) está em [`docs/events.md`](docs/events.md).
+Notifications observa os eventos (`order.created`, `order.confirmed`, `order.cancelled`,
+`stock.rejected`, `payment.rejected`, `payment.refunded`) e avisa o cliente, guardando o feed
+no MongoDB. O contrato completo (tópicos, formatos, DLT e transições de estado) está em
+[`docs/events.md`](docs/events.md).
 
 ## Stack
 
@@ -63,7 +70,7 @@ Notifications observa todos esses eventos (e `order.cancelled`, do cancelamento 
 | Mensageria | Apache Kafka 4 (KRaft) |
 | Bancos | PostgreSQL 16, MongoDB 7 |
 | Infra local | Docker + Docker Compose |
-| Orquestração | Kubernetes (Minikube/Kind) com Kustomize |
+| Orquestração | Kubernetes (kind/Minikube/Docker Desktop) com Kustomize |
 | Observabilidade | Prometheus, Grafana, Jaeger (OpenTelemetry) |
 
 ## Estrutura do repositório
@@ -79,7 +86,7 @@ shopmesh/
 │   ├── catalog-service/       # Node + Mongo + Kafka (reserva de estoque da Saga)
 │   ├── orders-service/        # Java + Postgres + Kafka
 │   ├── payments-service/      # Java + Postgres + Kafka
-│   └── notifications-service/ # Node + Kafka (sem banco)
+│   └── notifications-service/ # Node + Kafka + Mongo (feed de notificações)
 ├── infra/                     # docker-compose e configs de Prometheus/Grafana
 ├── k8s/                       # manifests Kustomize (base + observabilidade)
 ├── docs/events.md             # contrato dos eventos Kafka
@@ -150,8 +157,17 @@ builds dos frontends e, ao final, sobe a stack com Docker Compose e executa o sm
 
 ## Kubernetes
 
-Manifests Kustomize em [`k8s/`](k8s/README.md): `kubectl apply -k k8s/base` para a aplicação,
-ou `kubectl apply -k k8s/overlays/observability` para incluir Prometheus, Grafana e Jaeger.
+Manifests Kustomize em [`k8s/`](k8s/README.md), validados em um cluster `kind` local com Ingress NGINX:
+
+```powershell
+kind create cluster --config k8s/kind-config.yaml       # ou habilite o Kubernetes no Docker Desktop / minikube start
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.13.0/deploy/static/provider/kind/deploy.yaml
+.\scripts\build-images.ps1 -Load kind -KindCluster shopmesh   # gera e carrega as imagens no cluster
+Copy-Item k8s/base/secrets.env.example k8s/base/secrets.env   # troque os valores
+kubectl apply -k k8s/base                               # aplicação (use k8s/overlays/observability para incluir Prometheus, Grafana e Jaeger)
+```
+
+O passo a passo completo (segredos, Ingress, `hosts` e port-forwards) está em [`k8s/README.md`](k8s/README.md).
 
 ## Roadmap
 
@@ -162,20 +178,22 @@ ou `kubectl apply -k k8s/overlays/observability` para incluir Prometheus, Grafan
 - [x] Orders Service (Java/Spring Boot)
 - [x] Payments Service (Java/Spring Boot)
 - [x] Integração via Kafka (eventos de pedido/pagamento)
-- [x] Saga Pattern (orquestração pedidos ↔ pagamentos ↔ estoque)
-- [x] Notifications Service (Node + Kafka)
+- [x] Saga Pattern (orquestrada pelo Orders: pedidos ↔ pagamentos ↔ estoque, com estorno)
+- [x] Notifications Service (Node + Kafka + MongoDB)
 - [x] Admin (Angular)
 - [x] Observabilidade (Prometheus + Grafana + Jaeger)
-- [x] Deploy em Kubernetes local (Minikube/Kind)
+- [x] Deploy em Kubernetes local (kind/Minikube/Docker Desktop)
+- [x] Carrinho persistido no servidor (Orders) e sincronizado pelo Storefront
+- [x] Testes automatizados em todos os serviços, testes de integração com Testcontainers e CI
 
 ### Limitações conhecidas
 
-- A Saga é **coreografada** (cada serviço reage a eventos), não orquestrada por um coordenador.
-- Cancelar manualmente um pedido `PENDING` no Admin publica `order.cancelled` (libera a reserva de
-  estoque e avisa o cliente), mas uma cobrança já aprovada não é estornada. Confirmar manualmente
-  não publica evento: a Saga segue e o pagamento ainda pode efetivar ou liberar o estoque.
-- O Notifications Service guarda o feed em memória: ele recomeça vazio a cada reinício.
-- O preço é copiado do catálogo na criação do pedido; não há carrinho persistido no servidor.
+- O estorno é simulado: o Payments só muda o pagamento para `REFUNDED` (não há gateway real).
+- Cancelar manualmente um pedido no Admin só vale para pedidos `PENDING`; confirmar manualmente
+  não cobra nada. Ambos são atalhos de backoffice, sem tela para refazer a Saga.
+- O preço é copiado do catálogo na criação do pedido e o carrinho guarda o preço do momento em
+  que o item foi adicionado; o total oficial é sempre recalculado pelo Orders.
+- As notificações expiram do MongoDB após 30 dias (índice TTL).
 
 ## Licença
 

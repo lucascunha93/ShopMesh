@@ -13,6 +13,7 @@ public record PaymentResponse(
         BigDecimal amount,
         PaymentStatus status,
         String reason,
+        String refundReason,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -23,6 +24,7 @@ public record PaymentResponse(
                 payment.getAmount(),
                 payment.getStatus(),
                 payment.getReason(),
+                payment.getRefundReason(),
                 payment.getCreatedAt(),
                 payment.getUpdatedAt()
         );

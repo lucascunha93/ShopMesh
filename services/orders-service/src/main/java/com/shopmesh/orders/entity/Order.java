@@ -45,6 +45,9 @@ public class Order {
 
     private String statusReason;
 
+    @Enumerated(EnumType.STRING)
+    private SagaStep sagaStep;
+
     @NotNull
     @Column(nullable = false, columnDefinition = "NUMERIC")
     private BigDecimal totalAmount;

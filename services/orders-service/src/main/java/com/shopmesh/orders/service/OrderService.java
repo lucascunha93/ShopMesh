@@ -8,13 +8,21 @@ import com.shopmesh.orders.dto.OrderResponse;
 import com.shopmesh.orders.entity.Order;
 import com.shopmesh.orders.entity.OrderItem;
 import com.shopmesh.orders.entity.OrderStatus;
+import com.shopmesh.orders.entity.SagaStep;
 import com.shopmesh.orders.event.OrderCancelledDomainEvent;
 import com.shopmesh.orders.event.OrderCancelledEvent;
+import com.shopmesh.orders.event.OrderConfirmedEvent;
 import com.shopmesh.orders.event.OrderCreatedDomainEvent;
 import com.shopmesh.orders.event.OrderCreatedEvent;
 import com.shopmesh.orders.event.PaymentApprovedEvent;
+import com.shopmesh.orders.event.PaymentRefundRequestedEvent;
 import com.shopmesh.orders.event.PaymentRejectedEvent;
+import com.shopmesh.orders.event.PaymentRequestedEvent;
+import com.shopmesh.orders.event.SagaMessage;
+import com.shopmesh.orders.event.StockCommitRequestedEvent;
 import com.shopmesh.orders.event.StockRejectedEvent;
+import com.shopmesh.orders.event.StockReleaseRequestedEvent;
+import com.shopmesh.orders.event.StockReservedEvent;
 import com.shopmesh.orders.exception.AccessDeniedException;
 import com.shopmesh.orders.exception.InvalidOrderStatusTransitionException;
 import com.shopmesh.orders.exception.OrderNotFoundException;
@@ -34,6 +42,7 @@ import java.util.UUID;
 @Service
 public class OrderService {
     private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
+    private static final String REFUND_REASON = "Pedido cancelado antes da confirmação do pagamento";
 
     private final OrderRepository orderRepository;
     private final CatalogClient catalogClient;
@@ -67,6 +76,7 @@ public class OrderService {
         }
 
         order.setTotalAmount(totalAmount);
+        order.setSagaStep(SagaStep.STOCK_RESERVATION);
         Order savedOrder = orderRepository.saveAndFlush(order);
         eventPublisher.publishEvent(new OrderCreatedDomainEvent(OrderCreatedEvent.from(savedOrder)));
         return OrderResponse.from(savedOrder);
@@ -105,25 +115,70 @@ public class OrderService {
             throw new InvalidOrderStatusTransitionException(order.getStatus().name());
         }
 
+        SagaStep previousStep = order.getSagaStep();
         order.setStatus(newStatus);
+        order.setSagaStep(SagaStep.DONE);
         Order savedOrder = orderRepository.saveAndFlush(order);
-        // Cancelamento manual precisa avisar os demais serviços para liberar a reserva de estoque.
         if (newStatus == OrderStatus.CANCELLED) {
+            // Cancelamento manual avisa as notificações e libera a reserva (se já existir ou vier a existir).
+            // Se o pagamento estiver em andamento, o estorno só ocorre quando payment.approved chegar.
             eventPublisher.publishEvent(new OrderCancelledDomainEvent(OrderCancelledEvent.from(savedOrder)));
+            publishStockRelease(savedOrder, savedOrder.getStatusReason());
+        } else if (previousStep == SagaStep.PAYMENT) {
+            // Com o passo STOCK_RESERVATION nada é feito aqui: o commit sai em stock.reserved.
+            publish(SagaMessage.STOCK_COMMIT_TOPIC, savedOrder, StockCommitRequestedEvent.from(savedOrder));
+        }
+        if (newStatus == OrderStatus.CONFIRMED) {
+            publishOrderConfirmed(savedOrder);
         }
         return OrderResponse.from(savedOrder);
     }
 
     @Transactional
+    public void handleStockReserved(StockReservedEvent event) {
+        orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
+            switch (order.getStatus()) {
+                case PENDING -> {
+                    if (order.getSagaStep() == SagaStep.STOCK_RESERVATION) {
+                        order.setSagaStep(SagaStep.PAYMENT);
+                        orderRepository.saveAndFlush(order);
+                        requestPayment(order);
+                    } else if (order.getSagaStep() == SagaStep.PAYMENT) {
+                        // Reentrega: o Payments é idempotente, então reenviar o comando é seguro.
+                        requestPayment(order);
+                    } else {
+                        logIgnoredPaymentEvent(order);
+                    }
+                }
+                // Cancelado manualmente antes da reserva: devolve o estoque recém-reservado.
+                case CANCELLED -> publishStockRelease(order, order.getStatusReason());
+                // Confirmado manualmente antes da reserva: efetiva a baixa.
+                case CONFIRMED -> publish(SagaMessage.STOCK_COMMIT_TOPIC, order,
+                        StockCommitRequestedEvent.from(order));
+            }
+        }, () -> LOGGER.warn("Evento stock.reserved ignorado: pedido {} não encontrado", event.orderId()));
+    }
+
+    @Transactional
     public void handlePaymentApproved(PaymentApprovedEvent event) {
         orderRepository.findById(event.orderId()).ifPresentOrElse(order -> {
+            if (order.getStatus() == OrderStatus.CANCELLED) {
+                // Cancelado manualmente enquanto o pagamento corria: devolve o dinheiro e o estoque.
+                publish(SagaMessage.PAYMENT_REFUND_REQUESTED_TOPIC, order,
+                        PaymentRefundRequestedEvent.from(order, REFUND_REASON));
+                publishStockRelease(order, REFUND_REASON);
+                return;
+            }
             if (order.getStatus() != OrderStatus.PENDING) {
                 logIgnoredPaymentEvent(order);
                 return;
             }
 
             order.setStatus(OrderStatus.CONFIRMED);
+            order.setSagaStep(SagaStep.DONE);
             orderRepository.saveAndFlush(order);
+            publish(SagaMessage.STOCK_COMMIT_TOPIC, order, StockCommitRequestedEvent.from(order));
+            publishOrderConfirmed(order);
         }, () -> LOGGER.warn("Evento payment.approved ignorado: pedido {} não encontrado", event.orderId()));
     }
 
@@ -137,7 +192,9 @@ public class OrderService {
 
             order.setStatus(OrderStatus.CANCELLED);
             order.setStatusReason(event.reason());
+            order.setSagaStep(SagaStep.DONE);
             orderRepository.saveAndFlush(order);
+            publishStockRelease(order, event.reason());
         }, () -> LOGGER.warn("Evento payment.rejected ignorado: pedido {} não encontrado", event.orderId()));
     }
 
@@ -153,8 +210,25 @@ public class OrderService {
             order.setStatusReason(event.reason() == null || event.reason().isBlank()
                     ? "Estoque indisponível"
                     : event.reason());
+            order.setSagaStep(SagaStep.DONE);
             orderRepository.saveAndFlush(order);
         }, () -> LOGGER.warn("Evento stock.rejected ignorado: pedido {} não encontrado", event.orderId()));
+    }
+
+    private void publishOrderConfirmed(Order order) {
+        publish(SagaMessage.ORDER_CONFIRMED_TOPIC, order, OrderConfirmedEvent.from(order));
+    }
+
+    private void requestPayment(Order order) {
+        publish(SagaMessage.PAYMENT_REQUESTED_TOPIC, order, PaymentRequestedEvent.from(order));
+    }
+
+    private void publishStockRelease(Order order, String reason) {
+        publish(SagaMessage.STOCK_RELEASE_TOPIC, order, StockReleaseRequestedEvent.from(order, reason));
+    }
+
+    private void publish(String topic, Order order, Object payload) {
+        eventPublisher.publishEvent(new SagaMessage(topic, order.getId(), payload));
     }
 
     private void logIgnoredPaymentEvent(Order order) {

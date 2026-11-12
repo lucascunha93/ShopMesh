@@ -3,9 +3,10 @@ const { TOPICS } = require('./topics');
 const {
   orderCreatedSchema,
   orderCancelledSchema,
+  orderConfirmedSchema,
   stockRejectedSchema,
-  paymentApprovedSchema,
   paymentRejectedSchema,
+  paymentRefundedSchema,
 } = require('./schemas');
 const { logInfo } = require('../utils/logger');
 
@@ -36,16 +37,22 @@ const TEMPLATES = {
     message: `Não conseguimos reservar os itens do pedido #${shortId(event.orderId)}`
       + `${event.reason ? `: ${event.reason}` : '.'}`,
   }),
-  PAYMENT_APPROVED: (event) => ({
+  ORDER_CONFIRMED: (event) => ({
     type: 'ORDER_CONFIRMED',
     title: 'Pedido confirmado',
-    message: `O pagamento de ${formatAmount(event.amount)} foi aprovado e o pedido `
-      + `#${shortId(event.orderId)} está confirmado.`,
+    message: `O pedido #${shortId(event.orderId)} no valor de ${formatAmount(event.totalAmount)} `
+      + 'está confirmado.',
   }),
   PAYMENT_REJECTED: (event) => ({
     type: 'PAYMENT_REJECTED',
     title: 'Pagamento recusado',
     message: `O pagamento do pedido #${shortId(event.orderId)} foi recusado`
+      + `${event.reason ? `: ${event.reason}` : '.'}`,
+  }),
+  PAYMENT_REFUNDED: (event) => ({
+    type: 'PAYMENT_REFUNDED',
+    title: 'Pagamento estornado',
+    message: `O pagamento de ${formatAmount(event.amount)} do pedido #${shortId(event.orderId)} foi estornado`
       + `${event.reason ? `: ${event.reason}` : '.'}`,
   }),
 };
@@ -66,7 +73,7 @@ function buildNotification(event) {
 function createNotificationHandlers({ store }) {
   async function notify(event) {
     const notification = buildNotification(event);
-    if (!store.add(notification)) {
+    if (!(await store.add(notification))) {
       logInfo('Notificação duplicada ignorada', { eventId: event.eventId, orderId: event.orderId });
       return;
     }
@@ -85,8 +92,9 @@ function createNotificationHandlers({ store }) {
     [TOPICS.ORDER_CREATED]: { schema: orderCreatedSchema, handle: notify },
     [TOPICS.STOCK_REJECTED]: { schema: stockRejectedSchema, handle: notify },
     [TOPICS.ORDER_CANCELLED]: { schema: orderCancelledSchema, handle: notify },
-    [TOPICS.PAYMENT_APPROVED]: { schema: paymentApprovedSchema, handle: notify },
+    [TOPICS.ORDER_CONFIRMED]: { schema: orderConfirmedSchema, handle: notify },
     [TOPICS.PAYMENT_REJECTED]: { schema: paymentRejectedSchema, handle: notify },
+    [TOPICS.PAYMENT_REFUNDED]: { schema: paymentRefundedSchema, handle: notify },
   };
 }
 
